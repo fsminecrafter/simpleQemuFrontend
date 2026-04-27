@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QEMU Session — {{ session_id[:8] }}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="dark"] {
+    --bg:       #0a0b0e;
+    --surface:  #12141a;
+    --surface2: #1a1d26;
+    --border:   #2a2d3a;
+    --accent:   #00ff88;
+    --accent2:  #0088ff;
+    --danger:   #ff3b5c;
+    --text:     #e8eaf0;
+    --muted:    #5a5f72;
+    --glow:     rgba(0, 255, 136, 0.15);
+  }
+  :root[data-theme="light"] {
+    --bg:       #f0f2f5;
+    --surface:  #ffffff;
+    --surface2: #f7f8fc;
+    --border:   #d0d4e0;
+    --accent:   #00994f;
+    --accent2:  #0055cc;
+    --danger:   #cc1f3a;
+    --text:     #1a1d26;
+    --muted:    #8a8fa5;
+    --glow:     rgba(0, 153, 79, 0.1);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    transition: background 0.3s;
+  }
+
+  /* Toolbar */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 100;
+  }
+
+  .toolbar-logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1rem;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+  .toolbar-sep {
+    width: 1px; height: 20px;
+    background: var(--border);
+  }
+
+  .session-badge {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 0.7rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .session-badge-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .info-pill {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.65rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .info-pill span { color: var(--text); }
+
+  .toolbar-spacer { flex: 1; }
+
+  .toolbar-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+  .toolbar-btn:hover { border-color: var(--text); color: var(--text); }
+  .toolbar-btn.danger { border-color: var(--danger); color: var(--danger); }
+  .toolbar-btn.danger:hover { background: rgba(255,59,92,0.1); }
+
+  /* Theme toggle */
+  .theme-toggle { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .toggle-switch {
+    width: 36px; height: 20px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    position: relative;
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  .toggle-switch::after {
+    content:''; position:absolute;
+    top:2px; left:2px;
+    width:14px; height:14px;
+    background: var(--muted);
+    border-radius:50%;
+    transition: transform 0.3s, background 0.3s;
+  }
+  [data-theme="light"] .toggle-switch { background: var(--accent); border-color: var(--accent); }
+  [data-theme="light"] .toggle-switch::after { transform:translateX(16px); background:white; }
+
+  /* VNC area */
+  .vnc-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    background: #000;
+  }
+
+  /* Loading overlay */
+  .vnc-loading {
+    position: absolute;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 10;
+    transition: opacity 0.5s;
+  }
+  .vnc-loading.hidden { opacity: 0; pointer-events: none; }
+
+  .loading-spinner {
+    width: 48px; height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .loading-subtitle { font-size: 0.75rem; color: var(--muted); text-align: center; max-width: 340px; }
+  .loading-steps { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .loading-step {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 0.7rem; color: var(--muted);
+  }
+  .loading-step.done { color: var(--accent); }
+  .loading-step.active { color: var(--text); }
+  .step-indicator { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .loading-step.active .step-indicator { animation: pulse 1s infinite; }
+
+  #novnc-iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+  }
+
+  /* Stopped overlay */
+  .vm-stopped {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 11, 14, 0.9);
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 20;
+  }
+  .vm-stopped.show { display: flex; }
+  .stopped-icon { font-size: 3rem; }
+  .stopped-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .stopped-sub { font-size: 0.8rem; color: var(--muted); }
+
+  /* Status bar */
+  .statusbar {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 6px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 0.65rem;
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .statusbar-item span { color: var(--text); }
+  #statusbar-state { color: var(--accent); font-weight: 500; }
+
+  /* Clipboard / send ctrl-alt-del */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    width: 440px;
+    max-width: 90vw;
+  }
+  .modal-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    margin-bottom: 16px;
+  }
+  .modal textarea {
+    width: 100%; height: 120px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    padding: 12px;
+    border-radius: 6px;
+    resize: none;
+    outline: none;
+  }
+  .modal-btns { display: flex; gap: 8px; margin-top: 14px; justify-content: flex-end; }
+  .btn-primary {
+    background: var(--accent2);
+    color: white;
+    border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .btn-primary:hover { opacity: 0.85; }
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-secondary:hover { color: var(--text); border-color: var(--text); }
+</style>
+</head>
+<body>
+<!-- Toolbar -->
+<div class="toolbar">
+  <div class="toolbar-logo">[QEMU]</div>
+  <div class="toolbar-sep"></div>
+  <div class="session-badge">
+    <div class="session-badge-dot" id="status-dot"></div>
+    <span id="session-id-label">{{ session_id[:8] }}…</span>
+  </div>
+  <div class="info-pill">ARCH: <span>{{ session.arch.upper() }}</span></div>
+  <div class="info-pill">RAM: <span>{% if session.memory >= 1024 %}{{ (session.memory / 1024)|round(1) }} GB{% else %}{{ session.memory }} MB{% endif %}</span></div>
+  <div class="info-pill">DISK: <span>{{ session.storage }} GB</span></div>
+  <div class="info-pill">VNC: <span>:{{ session.vnc_port }}</span></div>
+  <div class="toolbar-spacer"></div>
+  <button class="toolbar-btn" onclick="sendCtrlAltDel()" title="Send Ctrl+Alt+Del">⎋ Ctrl+Alt+Del</button>
+  <button class="toolbar-btn" onclick="toggleFullscreen()" title="Fullscreen">⛶ Fullscreen</button>
+  <label class="theme-toggle toolbar-btn" style="border:none;" for="s-theme-check" title="Toggle theme">
+    <div class="toggle-switch"></div>
+    <input type="checkbox" id="s-theme-check" style="display:none">
+  </label>
+  <button class="toolbar-btn danger" onclick="confirmStop()">■ Stop VM</button>
+  <a class="toolbar-btn" href="/">← Dashboard</a>
+</div>
+
+<!-- VNC area -->
+<div class="vnc-area" id="vnc-area">
+
+  <!-- Loading -->
+  <div class="vnc-loading" id="vnc-loading">
+    <div class="loading-spinner"></div>
+    <div class="loading-title">Starting VM…</div>
+    <div class="loading-subtitle">QEMU is booting your image. The display will appear shortly.</div>
+    <div class="loading-steps" id="loading-steps">
+      <div class="loading-step done" id="ls-qemu"><div class="step-indicator"></div>QEMU process started</div>
+      <div class="loading-step active" id="ls-vnc"><div class="step-indicator"></div>Waiting for VNC server…</div>
+      <div class="loading-step" id="ls-ws"><div class="step-indicator"></div>Connecting WebSocket bridge…</div>
+      <div class="loading-step" id="ls-display"><div class="step-indicator"></div>Display ready</div>
+    </div>
+  </div>
+
+  <!-- noVNC iframe (loaded once VNC is up) -->
+  <iframe id="novnc-iframe" style="display:none;"></iframe>
+
+  <!-- VM stopped -->
+  <div class="vm-stopped" id="vm-stopped">
+    <div class="stopped-icon">⏹</div>
+    <div class="stopped-title">VM Stopped</div>
+    <div class="stopped-sub">The QEMU process has exited. You can return to the dashboard.</div>
+    <a href="/" class="toolbar-btn" style="margin-top:12px;">← Back to Dashboard</a>
+  </div>
+
+</div>
+
+<!-- Status bar -->
+<div class="statusbar">
+  <div class="statusbar-item">SESSION: <span>{{ session_id }}</span></div>
+  <div class="statusbar-item">STATUS: <span id="statusbar-state">Connecting…</span></div>
+  <div class="statusbar-item">ISO: <span>{{ session.iso }}</span></div>
+  <div class="statusbar-item" id="statusbar-time">UPTIME: <span id="uptime-val">0s</span></div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+const SESSION_ID = "{{ session_id }}";
+const WS_PORT    = {{ session.ws_port }};
+const VNC_PORT   = {{ session.vnc_port }};
+const STARTED    = new Date("{{ session.started }}");
+
+// Theme
+const html = document.documentElement;
+const sThemeCheck = document.getElementById('s-theme-check');
+function setTheme(light) {
+  html.setAttribute('data-theme', light ? 'light' : 'dark');
+  sThemeCheck.checked = light;
+  localStorage.setItem('theme', light ? 'light' : 'dark');
+}
+sThemeCheck.addEventListener('change', () => setTheme(sThemeCheck.checked));
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme) setTheme(savedTheme === 'light');
+
+// Uptime
+setInterval(() => {
+  const s = Math.floor((Date.now() - STARTED.getTime()) / 1000);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  document.getElementById('uptime-val').textContent =
+    (h ? h+'h ' : '') + (m ? m+'m ' : '') + sec + 's';
+}, 1000);
+
+// Socket
+const socket = io({ secure: true });
+socket.emit('join_session', { session_id: SESSION_ID });
+socket.on('vm_stopped', data => {
+  if (data.session_id === SESSION_ID) showStopped();
+});
+socket.on('session_status', data => {
+  if (!data.running) showStopped();
+});
+
+function showStopped() {
+  document.getElementById('vm-stopped').classList.add('show');
+  document.getElementById('vnc-loading').classList.add('hidden');
+  document.getElementById('status-dot').style.background = 'var(--danger)';
+  document.getElementById('statusbar-state').textContent = 'Stopped';
+  document.getElementById('statusbar-state').style.color = 'var(--danger)';
+}
+
+// ── VNC Connection ──
+const iframe = document.getElementById('novnc-iframe');
+let connected = false;
+let retries = 0;
+const MAX_RETRIES = 30;
+
+function stepDone(id) {
+  const el = document.getElementById(id);
+  if (el) { el.classList.remove('active'); el.classList.add('done'); }
+}
+function stepActive(id) {
+  const el = document.getElementById(id);
+  if (el) { el.classList.add('active'); el.classList.remove('done'); }
+}
+
+function tryConnectVNC() {
+  if (connected) return;
+  if (retries >= MAX_RETRIES) {
+    document.querySelector('.loading-subtitle').textContent =
+      'Could not connect to VNC. The VM may have crashed or VNC is not accessible.';
+    document.querySelector('.loading-spinner').style.borderTopColor = 'var(--danger)';
+    return;
+  }
+  retries++;
+  stepActive('ls-ws');
+
+  // Try to load noVNC via websockify
+  const proto = 'wss';
+  const host = window.location.hostname;
+
+  // Use noVNC auto-connect URL
+  const vncUrl = `/novnc/?host=${host}&port=${WS_PORT}&autoconnect=true&reconnect=true&password=`;
+
+  // Check if websockify is reachable first via a simple fetch
+  fetch(`https://${host}:${WS_PORT}/`, {mode: 'no-cors'})
+    .then(() => {
+      stepDone('ls-vnc');
+      stepDone('ls-ws');
+      stepActive('ls-display');
+
+      iframe.src = vncUrl;
+      iframe.style.display = 'block';
+      iframe.onload = () => {
+        stepDone('ls-display');
+        connected = true;
+        document.getElementById('vnc-loading').classList.add('hidden');
+        document.getElementById('statusbar-state').textContent = 'Connected (noVNC)';
+      };
+    })
+    .catch(() => {
+      setTimeout(tryConnectVNC, 2000);
+    });
+}
+
+// Fallback: show direct VNC info if websockify not available
+function showDirectVNCInfo() {
+  const loading = document.getElementById('vnc-loading');
+  loading.innerHTML = `
+    <div style="text-align:center; padding: 20px; max-width: 480px;">
+      <div style="font-size:2.5rem; margin-bottom:16px;">🖥️</div>
+      <div style="font-family:'Syne',sans-serif; font-size:1.2rem; font-weight:700; margin-bottom:10px; color:var(--text);">VM Running</div>
+      <div style="color:var(--muted); font-size:0.8rem; margin-bottom:20px; line-height:1.6;">
+        Your VM is running. Connect with a VNC viewer to interact with it.
+      </div>
+      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px;">
+        <div style="font-size:0.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px;">VNC Connection Details</div>
+        <div style="font-size:1rem; color:var(--accent);">localhost:${VNC_PORT}</div>
+        <div style="font-size:0.7rem; color:var(--muted); margin-top:4px;">Display :${VNC_PORT - 5900}</div>
+      </div>
+      <div style="font-size:0.7rem; color:var(--muted);">
+        Install <code style="color:var(--accent2)">websockify</code> and <code style="color:var(--accent2)">novnc</code> for in-browser access.<br>
+        Run: <code style="color:var(--accent); background:var(--surface2); padding:2px 6px; border-radius:3px; display:inline-block; margin-top:4px;">bash setup.sh</code>
+      </div>
+    </div>
+  `;
+}
+
+// Start connection attempts after a short delay (let QEMU init)
+setTimeout(() => {
+  stepDone('ls-qemu');
+  stepActive('ls-vnc');
+  tryConnectVNC();
+  // Fallback: if no websockify after 15s, show direct info
+  setTimeout(() => {
+    if (!connected) showDirectVNCInfo();
+  }, 15000);
+}, 2500);
+
+// ── Controls ──
+function sendCtrlAltDel() {
+  // Send via iframe if connected, else show info
+  if (connected && iframe.contentWindow) {
+    try {
+      iframe.contentWindow.postMessage({action: 'ctrlaltdel'}, '*');
+    } catch(e) {}
+  }
+}
+
+function toggleFullscreen() {
+  const area = document.getElementById('vnc-area');
+  if (!document.fullscreenElement) {
+    area.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+async function confirmStop() {
+  if (!confirm('Stop this VM? All unsaved state will be lost.')) return;
+  await fetch(`/api/session/${SESSION_ID}/stop`, { method: 'POST' });
+  showStopped();
+}
+</script>
+</body>
+</html>
