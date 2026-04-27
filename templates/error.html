@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<title>Error — QEMU Frontend</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#0a0b0e; --surface:#12141a; --border:#2a2d3a; --accent:#ff3b5c; --text:#e8eaf0; --muted:#5a5f72; }
+  *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:'JetBrains Mono',monospace; min-height:100vh; display:flex; align-items:center; justify-content:center; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:48px; text-align:center; max-width:400px; }
+  .icon { font-size:3rem; margin-bottom:20px; }
+  .title { font-family:'Syne',sans-serif; font-size:1.5rem; font-weight:800; color:var(--accent); margin-bottom:10px; }
+  .msg { color:var(--muted); font-size:0.8rem; line-height:1.6; margin-bottom:24px; }
+  .btn { display:inline-block; background:transparent; border:1px solid var(--border); color:var(--muted); font-family:'JetBrains Mono',monospace; font-size:0.75rem; padding:10px 20px; border-radius:6px; text-decoration:none; transition:all 0.2s; }
+  .btn:hover { border-color:var(--text); color:var(--text); }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="icon">⚠</div>
+  <div class="title">Error</div>
+  <div class="msg">{{ message }}</div>
+  <a href="/" class="btn">← Back to Dashboard</a>
+</div>
+</body>
+</html>
