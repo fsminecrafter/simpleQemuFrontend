@@ -84,7 +84,7 @@ install_system_deps() {
 
   local pkgs=()
 
-  # Python
+  # ── Python ──
   if ! command -v python3 &>/dev/null; then
     pkgs+=(python3)
     warn "python3 not found — will install"
@@ -98,55 +98,184 @@ install_system_deps() {
     ok "pip3 present"
   fi
 
-  # QEMU binaries
-  local qemu_pkgs=()
-  declare -A QEMU_ARCH_PKGS
+  # python3-venv for Debian/Ubuntu
   if [[ "$PKG_MANAGER" == "apt" ]]; then
-    QEMU_ARCH_PKGS=(
-      [x86]="qemu-system-x86"
-      [x86_64]="qemu-system-x86"
-      [arm]="qemu-system-arm"
-      [riscv]="qemu-system-misc"
-    )
-    qemu_pkgs=(qemu-system-x86 qemu-system-arm qemu-system-misc qemu-utils)
-  else
-    qemu_pkgs=(qemu qemu-img)
+    if ! python3 -c "import venv" &>/dev/null 2>&1; then
+      pkgs+=(python3-venv)
+    fi
   fi
 
-  for pkg in "${qemu_pkgs[@]}"; do
-    if ! dpkg -l "$pkg" &>/dev/null 2>&1 && ! rpm -q "$pkg" &>/dev/null 2>&1 && ! pacman -Qi "$pkg" &>/dev/null 2>&1; then
+  # ── OpenSSL ──
+  if ! command -v openssl &>/dev/null; then
+    pkgs+=(openssl)
+  else
+    ok "openssl present"
+  fi
+
+  # ── QEMU — install ALL emulators ──
+  head "Installing QEMU Emulators"
+  info "Installing all QEMU system emulators (x86, ARM, RISC-V, etc.)…"
+
+  if [[ "$PKG_MANAGER" == "apt" ]]; then
+    local qemu_pkgs=(
+      qemu-system          # meta-package: all architectures
+      qemu-system-x86      # x86 + x86_64 (qemu-system-i386, qemu-system-x86_64)
+      qemu-system-arm      # arm32 + arm64 (qemu-system-arm, qemu-system-aarch64)
+      qemu-system-misc     # riscv64, s390x, and others
+      qemu-utils           # qemu-img
+    )
+    for pkg in "${qemu_pkgs[@]}"; do
+      if ! dpkg -l "$pkg" &>/dev/null 2>&1; then
+        pkgs+=("$pkg")
+      else
+        ok "$pkg already installed"
+      fi
+    done
+
+  elif [[ "$PKG_MANAGER" == "dnf" || "$PKG_MANAGER" == "yum" ]]; then
+    local qemu_pkgs=(
+      qemu-system-x86
+      qemu-system-arm
+      qemu-system-aarch64
+      qemu-system-riscv
+      qemu-img
+      qemu-common
+    )
+    for pkg in "${qemu_pkgs[@]}"; do
       pkgs+=("$pkg")
+    done
+
+  elif [[ "$PKG_MANAGER" == "pacman" ]]; then
+    local qemu_pkgs=(qemu-full qemu-img)
+    for pkg in "${qemu_pkgs[@]}"; do
+      if ! pacman -Qi "$pkg" &>/dev/null 2>&1; then
+        pkgs+=("$pkg")
+      else
+        ok "$pkg already installed"
+      fi
+    done
+  fi
+
+  # ── ARM64 UEFI firmware ──
+  if [[ "$PKG_MANAGER" == "apt" ]]; then
+    if ! dpkg -l qemu-efi-aarch64 &>/dev/null 2>&1; then
+      pkgs+=(qemu-efi-aarch64)
+      info "Adding ARM64 UEFI firmware (qemu-efi-aarch64)"
     else
-      ok "$pkg already installed"
+      ok "qemu-efi-aarch64 already installed"
+    fi
+  fi
+
+  # ── noVNC + websockify ──
+  head "Installing noVNC and websockify"
+  if [[ "$PKG_MANAGER" == "apt" ]]; then
+    local novnc_pkgs=()
+    if ! dpkg -l novnc &>/dev/null 2>&1; then
+      novnc_pkgs+=(novnc)
+    else
+      ok "novnc already installed"
+    fi
+    if ! dpkg -l websockify &>/dev/null 2>&1; then
+      novnc_pkgs+=(websockify)
+    else
+      ok "websockify already installed"
+    fi
+    pkgs+=("${novnc_pkgs[@]}")
+
+  elif [[ "$PKG_MANAGER" == "dnf" || "$PKG_MANAGER" == "yum" ]]; then
+    # noVNC may not be in default repos — try pip fallback
+    if ! command -v websockify &>/dev/null; then
+      warn "websockify not in repos — will install via pip after"
+    fi
+    if ! rpm -q novnc &>/dev/null 2>&1; then
+      pkgs+=(novnc) 2>/dev/null || true
+    fi
+
+  elif [[ "$PKG_MANAGER" == "pacman" ]]; then
+    if ! pacman -Qi novnc &>/dev/null 2>&1; then
+      pkgs+=(novnc)
+    fi
+  fi
+
+  # ── Install collected packages ──
+  if [[ ${#pkgs[@]} -gt 0 ]]; then
+    info "Installing packages: ${pkgs[*]}"
+    $PKG_INSTALL "${pkgs[@]}" || warn "Some packages may have failed — check output above"
+  else
+    ok "All system packages already present"
+  fi
+
+  # ── Verify QEMU binaries ──
+  head "Verifying QEMU Binaries"
+  local qemu_bins=(
+    qemu-system-i386
+    qemu-system-x86_64
+    qemu-system-arm
+    qemu-system-aarch64
+    qemu-system-riscv64
+    qemu-img
+  )
+  local missing_bins=()
+  for bin in "${qemu_bins[@]}"; do
+    if command -v "$bin" &>/dev/null; then
+      ok "$bin → $(command -v "$bin")"
+    else
+      warn "$bin not found"
+      missing_bins+=("$bin")
+    fi
+  done
+  if [[ ${#missing_bins[@]} -gt 0 ]]; then
+    warn "Some QEMU binaries are missing: ${missing_bins[*]}"
+    warn "These architectures will be unavailable in the frontend."
+  fi
+
+  # ── Verify noVNC ──
+  head "Verifying noVNC / websockify"
+  local novnc_found=false
+  for p in /usr/share/novnc /usr/share/novnc/web /opt/novnc; do
+    if [[ -d "$p" ]]; then
+      ok "noVNC found at: $p"
+      novnc_found=true
+      break
     fi
   done
 
-  # OpenSSL (for cert generation)
-  if ! command -v openssl &>/dev/null; then pkgs+=(openssl); fi
-
-  # websockify + noVNC (optional but recommended)
-  if ! command -v websockify &>/dev/null; then
-    if [[ "$PKG_MANAGER" == "apt" ]]; then
-      pkgs+=(websockify novnc)
-    fi
-    warn "websockify not found — will install (needed for in-browser VNC)"
-  else
-    ok "websockify $(websockify --version 2>&1 | head -1)"
+  if ! $novnc_found; then
+    warn "noVNC web directory not found. Trying pip install…"
+    install_novnc_pip
   fi
 
-  if [[ ${#pkgs[@]} -gt 0 ]]; then
-    info "Installing: ${pkgs[*]}"
-    $PKG_INSTALL "${pkgs[@]}" || warn "Some packages may have failed — check output above"
+  if command -v websockify &>/dev/null; then
+    ok "websockify found: $(command -v websockify)"
+  else
+    warn "websockify not found. Trying pip install…"
+    pip3 install websockify 2>/dev/null || \
+      warn "pip install websockify failed — in-browser VNC will not work"
   fi
 
   ok "System packages done"
+}
+
+install_novnc_pip() {
+  info "Installing noVNC via pip…"
+  pip3 install novnc 2>/dev/null || true
+
+  # Try downloading from GitHub as a last resort
+  if ! [[ -d /usr/share/novnc ]]; then
+    if command -v git &>/dev/null; then
+      info "Cloning noVNC from GitHub to /opt/novnc…"
+      git clone --depth=1 https://github.com/novnc/noVNC.git /opt/novnc 2>/dev/null || \
+        warn "Could not clone noVNC. In-browser VNC will fall back to direct VNC info."
+    else
+      warn "git not found — cannot clone noVNC. Install git and re-run, or install novnc manually."
+    fi
+  fi
 }
 
 # ── Python deps ──────────────────────────────────────────────────
 install_python_deps() {
   head "Installing Python Dependencies"
 
-  # Prefer venv
   VENV_DIR="$APP_DIR/venv"
   if [[ ! -d "$VENV_DIR" ]]; then
     info "Creating virtual environment at $VENV_DIR"
@@ -201,14 +330,12 @@ setup_firewall() {
     return
   fi
 
-  # ufw
   if command -v ufw &>/dev/null; then
     info "Using ufw…"
     ufw allow "$PORT/tcp" comment "QEMU Web Frontend" || warn "ufw rule failed"
     ok "ufw: port $PORT allowed"
   fi
 
-  # firewalld
   if command -v firewall-cmd &>/dev/null && systemctl is-active --quiet firewalld; then
     info "Using firewalld…"
     firewall-cmd --permanent --add-port="$PORT/tcp" || warn "firewalld rule failed"
@@ -216,7 +343,6 @@ setup_firewall() {
     ok "firewalld: port $PORT allowed"
   fi
 
-  # iptables fallback
   if ! command -v ufw &>/dev/null && ! command -v firewall-cmd &>/dev/null; then
     if command -v iptables &>/dev/null; then
       iptables -I INPUT -p tcp --dport "$PORT" -j ACCEPT || warn "iptables rule failed"
@@ -226,8 +352,7 @@ setup_firewall() {
     fi
   fi
 
-  # VNC range (5900-5999) for local use
-  if ask_yn "Also allow VNC port range 5900-5999 (local VNC clients)?"; then
+  if ask_yn "Also allow VNC port range 5900-5999 (for external VNC clients)?"; then
     if command -v ufw &>/dev/null; then
       ufw allow 5900:5999/tcp comment "QEMU VNC" || true
     fi
@@ -255,7 +380,8 @@ setup_kvm() {
     fi
   else
     warn "/dev/kvm not found — KVM acceleration unavailable"
-    warn "This is normal in VMs or on systems without VT-x/AMD-V"
+    warn "This is normal in VMs or systems without VT-x/AMD-V enabled in BIOS"
+    warn "Emulation will still work, just slower"
   fi
 }
 
@@ -350,6 +476,31 @@ print_summary() {
     echo -e "  ${CYAN}cd $APP_DIR && python3 app.py${RESET}"
   fi
   echo ""
+
+  # Final status check
+  echo -e "  ${BOLD}Component Status:${RESET}"
+  for bin in qemu-system-i386 qemu-system-x86_64 qemu-system-arm qemu-system-aarch64 qemu-system-riscv64; do
+    if command -v "$bin" &>/dev/null; then
+      echo -e "  ${GREEN}✓${RESET} $bin"
+    else
+      echo -e "  ${RED}✗${RESET} $bin (unavailable)"
+    fi
+  done
+  for tool in websockify qemu-img openssl; do
+    if command -v "$tool" &>/dev/null; then
+      echo -e "  ${GREEN}✓${RESET} $tool"
+    else
+      echo -e "  ${YELLOW}⚠${RESET} $tool (not found)"
+    fi
+  done
+  for p in /usr/share/novnc /opt/novnc; do
+    if [[ -d "$p" ]]; then
+      echo -e "  ${GREEN}✓${RESET} noVNC at $p"
+      break
+    fi
+  done
+  echo ""
+
   warn "Browser will show a certificate warning — click 'Advanced' → 'Proceed'"
   echo ""
 }
