@@ -14,6 +14,30 @@ Then open: **https://localhost:8444**
 
 ---
 
+## Troubleshooting
+
+If you cannot start a session, maybe KVM is disabled on your device. And if KVM is not installed then run
+
+```
+nano app.py
+```
+
+And edit the is_kvm_available() function and change the 
+
+return, to
+
+```
+return False
+```
+
+---
+
+If the session wont ever connect then your browser is propably just declining the connection
+
+try connecting to https://your-ip-address:6900/ with your web browser
+
+and click thrust website, now your vnc should work.
+
 ## Features
 
 - **Drag & Drop ISO** — upload `.iso`, `.img`, `.qcow2`, `.raw`, `.vmdk`
