@@ -391,9 +391,10 @@ def launch_vm():
     if websockify_bin and novnc_path:
         try:
             ws_proc = subprocess.Popen(
-                [websockify_bin, "--web", novnc_path, str(ws_port), f"localhost:{vnc_port}"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                [websockify_bin, "--web", novnc_path, str(ws_port), f"127.0.0.1:{vnc_port}"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
             )
             logger.info(f"[{session_id}] websockify started on port {ws_port} → VNC {vnc_port}")
         except Exception as e:
