@@ -276,27 +276,38 @@ install_novnc_pip() {
 install_python_deps() {
   head "Installing Python Dependencies"
 
+  # Ensure python3-venv is installed before attempting to create venv
+  if [[ "$PKG_MANAGER" == "apt" ]]; then
+    info "Ensuring python3-venv is installed..."
+    apt-get install -y python3-venv python3-pip -qq || warn "Could not install python3-venv via apt"
+  elif [[ "$PKG_MANAGER" == "dnf" || "$PKG_MANAGER" == "yum" ]]; then
+    $PKG_INSTALL python3-venv python3-pip 2>/dev/null || true
+  fi
+
   VENV_DIR="$APP_DIR/venv"
-  if [[ ! -d "$VENV_DIR" ]]; then
-    info "Creating virtual environment at $VENV_DIR"
-    python3 -m venv "$VENV_DIR" || {
-      warn "venv creation failed — installing to user site"
-      VENV_DIR=""
-    }
+
+  # Always remove and recreate venv to avoid broken envs
+  if [[ -d "$VENV_DIR" ]]; then
+    info "Removing existing venv at $VENV_DIR..."
+    rm -rf "$VENV_DIR"
   fi
 
-  if [[ -n "$VENV_DIR" ]]; then
-    PIP="$VENV_DIR/bin/pip"
-    PYTHON="$VENV_DIR/bin/python"
-    ok "Using venv: $VENV_DIR"
+  info "Creating fresh virtual environment at $VENV_DIR..."
+  if python3 -m venv "$VENV_DIR"; then
+    ok "Virtual environment created"
   else
-    PIP="pip3"
-    PYTHON="python3"
+    err "python3 -m venv failed. Try: sudo apt install python3-venv"
   fi
 
-  $PIP install --upgrade pip -q
-  $PIP install -r "$APP_DIR/requirements.txt"
-  ok "Python dependencies installed"
+  PIP="$VENV_DIR/bin/pip"
+  PYTHON="$VENV_DIR/bin/python"
+
+  info "Upgrading pip..."
+  "$PIP" install --upgrade pip -q
+
+  info "Installing requirements..."
+  "$PIP" install -r "$APP_DIR/requirements.txt"
+  ok "Python dependencies installed into $VENV_DIR"
 }
 
 # ── SSL Certificate ──────────────────────────────────────────────
