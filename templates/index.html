@@ -47,7 +47,6 @@
     transition: background 0.3s, color 0.3s;
   }
 
-  /* Grid background */
   body::before {
     content: '';
     position: fixed;
@@ -69,7 +68,6 @@
     z-index: 1;
   }
 
-  /* Header */
   header {
     display: flex;
     align-items: center;
@@ -100,7 +98,6 @@
     margin-left: 4px;
   }
 
-  /* Theme toggle */
   .theme-toggle {
     display: flex;
     align-items: center;
@@ -129,15 +126,15 @@
   [data-theme="light"] .toggle-switch { background: var(--accent); border-color: var(--accent); }
   [data-theme="light"] .toggle-switch::after { transform: translateX(20px); background: white; }
 
-  /* Status bar */
   .status-bar {
     display: flex;
     gap: 16px;
-    margin-bottom: 32px;
+    margin-bottom: 16px;
     font-size: 0.7rem;
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.08em;
+    flex-wrap: wrap;
   }
   .status-dot {
     display: inline-block;
@@ -148,12 +145,34 @@
     margin-right: 6px;
     vertical-align: middle;
   }
+  .status-dot.warn { background: var(--warning); }
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
   }
 
-  /* ── Step indicator ── */
+  /* System info bar */
+  .sysinfo-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 24px;
+    font-size: 0.65rem;
+  }
+  .sysinfo-chip {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--muted);
+  }
+  .sysinfo-chip.ok { border-color: var(--accent); color: var(--accent); }
+  .sysinfo-chip.warn { border-color: var(--warning); color: var(--warning); }
+  .sysinfo-chip.err { border-color: var(--danger); color: var(--danger); }
+
   .steps {
     display: flex;
     gap: 0;
@@ -187,7 +206,6 @@
   }
   .step.active .step-num { opacity: 1; }
 
-  /* ── Phase panels ── */
   .phase { display: none; }
   .phase.active { display: block; animation: fadeUp 0.4s ease; }
   @keyframes fadeUp {
@@ -195,7 +213,6 @@
     to   { opacity: 1; transform: translateY(0); }
   }
 
-  /* ── Drop Zone ── */
   .drop-zone {
     border: 2px dashed var(--border);
     border-radius: 16px;
@@ -281,7 +298,6 @@
   }
   .progress-label { font-size: 0.7rem; color: var(--muted); text-align: center; }
 
-  /* Selected file badge */
   .file-badge {
     display: none;
     align-items: center;
@@ -308,7 +324,6 @@
   }
   .file-badge-remove:hover { background: var(--danger); color: white; }
 
-  /* ── Config form ── */
   .config-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -344,7 +359,6 @@
     color: var(--accent);
   }
 
-  /* Arch selector */
   .arch-grid {
     display: grid;
     grid-template-columns: repeat(5, 1fr);
@@ -364,6 +378,7 @@
     text-align: center;
     transition: all 0.2s;
     letter-spacing: 0.03em;
+    position: relative;
   }
   .arch-btn:hover { border-color: var(--accent2); color: var(--text); }
   .arch-btn.selected {
@@ -372,8 +387,20 @@
     color: var(--accent2);
     font-weight: 500;
   }
+  .arch-btn.unavailable {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .arch-btn.unavailable:hover { border-color: var(--danger); color: var(--danger); }
+  .arch-avail-dot {
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .arch-avail-dot.no { background: var(--danger); }
 
-  /* Sliders */
   .slider-wrap { position: relative; }
   input[type="range"] {
     -webkit-appearance: none;
@@ -402,7 +429,6 @@
     border: none;
   }
 
-  /* Storage import */
   .import-row {
     display: flex;
     gap: 8px;
@@ -423,7 +449,6 @@
   }
   .import-label:hover { border-color: var(--accent2); color: var(--text); }
 
-  /* Extra flags */
   .flags-input-wrap { position: relative; }
   .flags-input {
     width: 100%;
@@ -451,7 +476,6 @@
   .flags-validation.error { color: var(--danger); }
   .flags-validation.ok { color: var(--accent); }
 
-  /* ── Launch button ── */
   .launch-section {
     display: flex;
     align-items: center;
@@ -493,7 +517,6 @@
   }
   .btn-launch-icon { font-size: 1.2rem; }
 
-  /* ── Error / Toast ── */
   .toast {
     position: fixed;
     bottom: 24px; right: 24px;
@@ -502,19 +525,19 @@
     padding: 12px 20px;
     border-radius: 8px;
     font-size: 0.8rem;
-    max-width: 360px;
+    max-width: 420px;
     z-index: 999;
     transform: translateY(80px);
     opacity: 0;
     transition: all 0.3s;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
+    word-break: break-word;
   }
   .toast.show { transform: translateY(0); opacity: 1; }
   .toast.success { background: var(--accent); color: #000; }
 
-  /* ── Sessions panel ── */
   .sessions-header {
     display: flex;
     align-items: center;
@@ -559,15 +582,15 @@
     animation: pulse 2s infinite;
     flex-shrink: 0;
   }
-  .session-info { flex: 1; }
+  .session-info { flex: 1; min-width: 0; }
   .session-arch {
     font-family: 'Syne', sans-serif;
     font-size: 0.85rem;
     font-weight: 700;
     color: var(--text);
   }
-  .session-meta { font-size: 0.68rem; color: var(--muted); margin-top: 2px; }
-  .session-actions { display: flex; gap: 8px; }
+  .session-meta { font-size: 0.68rem; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .session-actions { display: flex; gap: 8px; flex-shrink: 0; }
   .btn-sm {
     font-family: 'JetBrains Mono', monospace;
     font-size: 0.68rem;
@@ -596,11 +619,9 @@
     border-radius: 10px;
   }
 
-  /* File input hidden */
   #file-input { display: none; }
   #import-disk-input { display: none; }
 
-  /* Back btn */
   .btn-back {
     background: transparent;
     border: 1px solid var(--border);
@@ -620,7 +641,6 @@
     margin: 32px 0;
   }
 
-  /* Spinner */
   .spinner {
     width: 20px; height: 20px;
     border: 2px solid rgba(0,0,0,0.2);
@@ -632,7 +652,6 @@
   .spinner.visible { display: block; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Prelaunch info summary */
   .launch-summary {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -652,7 +671,6 @@
 <body>
 <div class="container">
 
-  <!-- Header -->
   <header>
     <div class="logo">
       <span class="logo-bracket">[</span>
@@ -667,14 +685,17 @@
     </label>
   </header>
 
-  <!-- Status bar -->
   <div class="status-bar">
     <span><span class="status-dot"></span>SYSTEM ONLINE</span>
     <span id="session-count-bar">0 ACTIVE SESSIONS</span>
     <span id="clock-bar"></span>
   </div>
 
-  <!-- Steps -->
+  <!-- System capability chips -->
+  <div class="sysinfo-bar" id="sysinfo-bar">
+    <div class="sysinfo-chip">⏳ Checking system…</div>
+  </div>
+
   <div class="steps">
     <div class="step active" id="step-1"><span class="step-num">01</span>LOAD ISO</div>
     <div class="step" id="step-2"><span class="step-num">02</span>CONFIGURE</div>
@@ -708,7 +729,6 @@
       <button class="file-badge-remove" id="file-remove-btn">✕ Remove</button>
     </div>
 
-    <!-- Active sessions -->
     <hr class="divider">
     <div class="sessions-header">
       <div class="section-title">Active Sessions</div>
@@ -726,28 +746,28 @@
       <!-- Architecture -->
       <div class="field full-width">
         <div class="field-label">Architecture <span class="field-value" id="arch-display">x86_64</span></div>
-        <div class="arch-grid">
-          <button class="arch-btn" data-arch="x86">x86</button>
-          <button class="arch-btn selected" data-arch="x86_64">x86_64</button>
-          <button class="arch-btn" data-arch="arm32">arm32</button>
-          <button class="arch-btn" data-arch="arm64">arm64</button>
-          <button class="arch-btn" data-arch="riscv">riscv</button>
+        <div class="arch-grid" id="arch-grid">
+          <button class="arch-btn" data-arch="x86">x86<div class="arch-avail-dot" id="dot-x86"></div></button>
+          <button class="arch-btn selected" data-arch="x86_64">x86_64<div class="arch-avail-dot" id="dot-x86_64"></div></button>
+          <button class="arch-btn" data-arch="arm32">arm32<div class="arch-avail-dot" id="dot-arm32"></div></button>
+          <button class="arch-btn" data-arch="arm64">arm64<div class="arch-avail-dot" id="dot-arm64"></div></button>
+          <button class="arch-btn" data-arch="riscv">riscv<div class="arch-avail-dot" id="dot-riscv"></div></button>
         </div>
       </div>
 
       <!-- Memory -->
       <div class="field">
-        <div class="field-label">Memory (RAM) <span class="field-value" id="mem-display">1024 MB</span></div>
+        <div class="field-label">Memory (RAM) <span class="field-value" id="mem-display">{{ (max_memory // 2048) }} GB</span></div>
         <div class="slider-wrap">
-          <input type="range" id="mem-slider" min="128" max="{{ max_memory }}" step="128" value="1024">
+          <input type="range" id="mem-slider" min="128" max="{{ max_memory }}" step="128" value="{{ max_memory // 2 }}">
         </div>
       </div>
 
       <!-- Storage -->
       <div class="field">
-        <div class="field-label">Storage Disk <span class="field-value" id="storage-display">20 GB</span></div>
+        <div class="field-label">Storage Disk <span class="field-value" id="storage-display">{{ max_storage // 2 }} GB</span></div>
         <div class="slider-wrap">
-          <input type="range" id="storage-slider" min="1" max="{{ max_storage }}" step="1" value="20">
+          <input type="range" id="storage-slider" min="1" max="{{ max_storage }}" step="1" value="{{ max_storage // 2 }}">
         </div>
         <div class="import-row">
           <label class="import-label" for="import-disk-input">
@@ -770,12 +790,11 @@
 
     </div>
 
-    <!-- Launch summary -->
     <div class="launch-summary" id="launch-summary">
       <div><div class="summary-item-label">ISO</div><div class="summary-item-val" id="sum-iso">—</div></div>
       <div><div class="summary-item-label">Arch</div><div class="summary-item-val" id="sum-arch">x86_64</div></div>
-      <div><div class="summary-item-label">Memory</div><div class="summary-item-val" id="sum-mem">1024 MB</div></div>
-      <div><div class="summary-item-label">Storage</div><div class="summary-item-val" id="sum-storage">20 GB</div></div>
+      <div><div class="summary-item-label">Memory</div><div class="summary-item-val" id="sum-mem">—</div></div>
+      <div><div class="summary-item-label">Storage</div><div class="summary-item-val" id="sum-storage">—</div></div>
     </div>
 
     <div class="launch-section">
@@ -788,22 +807,25 @@
     </div>
   </div>
 
-</div><!-- /container -->
+</div>
 
-<!-- Toast -->
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
+// ── Constants from server ──
+const MAX_MEMORY  = {{ max_memory }};
+const MAX_STORAGE = {{ max_storage }};
+const DEFAULT_MEM = Math.floor(MAX_MEMORY / 2);
+const DEFAULT_STORAGE = Math.floor(MAX_STORAGE / 2);
+
 // ── State ──
 let uploadedISO = null;
 let importedDisk = null;
 let selectedArch = 'x86_64';
 let flagsValid = true;
 let flagsTimeout = null;
-
-const MAX_MEMORY  = {{ max_memory }};
-const MAX_STORAGE = {{ max_storage }};
+let sysInfo = null;
 
 const socket = io({ secure: true });
 
@@ -818,7 +840,6 @@ function setTheme(light) {
   themeCheck.checked = light;
   localStorage.setItem('theme', light ? 'light' : 'dark');
 }
-
 themeCheck.addEventListener('change', () => setTheme(themeCheck.checked));
 const savedTheme = localStorage.getItem('theme');
 if (savedTheme) setTheme(savedTheme === 'light');
@@ -836,7 +857,7 @@ function showToast(msg, type = 'error') {
   const t = document.getElementById('toast');
   t.textContent = (type === 'error' ? '⚠ ' : '✓ ') + msg;
   t.className = 'toast show' + (type === 'success' ? ' success' : '');
-  setTimeout(() => t.className = 'toast', 4000);
+  setTimeout(() => t.className = 'toast', 6000);
 }
 
 // ── Phase navigation ──
@@ -852,6 +873,66 @@ function setPhase(n) {
 }
 
 function goBack() { setPhase(1); }
+
+// ── System Info ──
+async function loadSystemInfo() {
+  try {
+    const res = await fetch('/api/system_info');
+    sysInfo = await res.json();
+    renderSysInfo();
+    updateArchButtons();
+  } catch(e) {
+    document.getElementById('sysinfo-bar').innerHTML =
+      '<div class="sysinfo-chip warn">⚠ Could not load system info</div>';
+  }
+}
+
+function renderSysInfo() {
+  const bar = document.getElementById('sysinfo-bar');
+  const chips = [];
+
+  chips.push(`<div class="sysinfo-chip ${sysInfo.kvm ? 'ok' : 'warn'}">
+    ${sysInfo.kvm ? '⚡ KVM enabled' : '🐌 KVM unavailable (slow)'}
+  </div>`);
+
+  chips.push(`<div class="sysinfo-chip ${sysInfo.websockify ? 'ok' : 'warn'}">
+    ${sysInfo.websockify ? '🖥 websockify ✓' : '⚠ websockify missing'}
+  </div>`);
+
+  chips.push(`<div class="sysinfo-chip ${sysInfo.novnc ? 'ok' : 'warn'}">
+    ${sysInfo.novnc ? '🌐 noVNC ✓' : '⚠ noVNC missing'}
+  </div>`);
+
+  for (const [arch, info] of Object.entries(sysInfo.qemu)) {
+    chips.push(`<div class="sysinfo-chip ${info.available ? 'ok' : 'err'}">
+      ${info.available ? '✓' : '✗'} ${arch}
+    </div>`);
+  }
+
+  if (!sysInfo.websockify || !sysInfo.novnc) {
+    chips.push(`<div class="sysinfo-chip warn" style="font-size:0.6rem;">Run setup.sh to install missing components</div>`);
+  }
+
+  bar.innerHTML = chips.join('');
+}
+
+function updateArchButtons() {
+  if (!sysInfo) return;
+  document.querySelectorAll('.arch-btn').forEach(btn => {
+    const arch = btn.dataset.arch;
+    const info = sysInfo.qemu[arch];
+    const dot = btn.querySelector('.arch-avail-dot');
+    if (info && !info.available) {
+      btn.classList.add('unavailable');
+      if (dot) dot.classList.add('no');
+      btn.title = `${info.binary} not installed`;
+    } else {
+      btn.classList.remove('unavailable');
+      if (dot) dot.classList.remove('no');
+      btn.title = '';
+    }
+  });
+}
 
 // ── Drop Zone ──
 const dropZone  = document.getElementById('drop-zone');
@@ -946,6 +1027,10 @@ document.getElementById('file-remove-btn').addEventListener('click', e => {
 // ── Config ──
 document.querySelectorAll('.arch-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    if (btn.classList.contains('unavailable')) {
+      showToast(`${btn.dataset.arch} QEMU binary not installed — run setup.sh`);
+      return;
+    }
     document.querySelectorAll('.arch-btn').forEach(b => b.classList.remove('selected'));
     btn.classList.add('selected');
     selectedArch = btn.dataset.arch;
@@ -955,12 +1040,16 @@ document.querySelectorAll('.arch-btn').forEach(btn => {
 });
 
 const memSlider = document.getElementById('mem-slider');
+function memLabel(v) {
+  return v >= 1024 ? (v/1024).toFixed(1).replace(/\.0$/, '') + ' GB' : v + ' MB';
+}
 memSlider.addEventListener('input', () => {
   const v = parseInt(memSlider.value);
-  const label = v >= 1024 ? (v/1024).toFixed(1) + ' GB' : v + ' MB';
-  document.getElementById('mem-display').textContent = label;
-  document.getElementById('sum-mem').textContent = label;
+  document.getElementById('mem-display').textContent = memLabel(v);
+  document.getElementById('sum-mem').textContent = memLabel(v);
 });
+// Set initial display
+document.getElementById('mem-display').textContent = memLabel(parseInt(memSlider.value));
 
 const storageSlider = document.getElementById('storage-slider');
 storageSlider.addEventListener('input', () => {
@@ -968,8 +1057,8 @@ storageSlider.addEventListener('input', () => {
   document.getElementById('storage-display').textContent = v + ' GB';
   document.getElementById('sum-storage').textContent = v + ' GB';
 });
+document.getElementById('storage-display').textContent = storageSlider.value + ' GB';
 
-// Import disk
 document.getElementById('import-disk-input').addEventListener('change', e => {
   const file = e.target.files[0];
   if (file) {
@@ -978,7 +1067,6 @@ document.getElementById('import-disk-input').addEventListener('change', e => {
   }
 });
 
-// Flags validation
 document.getElementById('flags-input').addEventListener('input', e => {
   clearTimeout(flagsTimeout);
   flagsTimeout = setTimeout(() => validateFlags(e.target.value), 600);
@@ -1017,17 +1105,23 @@ async function validateFlags(val) {
 }
 
 function updateSummary() {
-  document.getElementById('sum-iso').textContent =
-    uploadedISO ? uploadedISO.substring(9) : '—'; // strip uid prefix
+  const isoDisplay = uploadedISO ? uploadedISO.replace(/^[0-9a-f]{8}_/, '') : '—';
+  document.getElementById('sum-iso').textContent = isoDisplay;
   document.getElementById('sum-arch').textContent = selectedArch;
-  document.getElementById('sum-mem').textContent = document.getElementById('mem-display').textContent;
-  document.getElementById('sum-storage').textContent = document.getElementById('storage-display').textContent;
+  document.getElementById('sum-mem').textContent = memLabel(parseInt(memSlider.value));
+  document.getElementById('sum-storage').textContent = storageSlider.value + ' GB';
 }
 
 // ── Launch ──
 async function launchVM() {
   if (!uploadedISO) { showToast('Please upload an ISO first'); return; }
   if (!flagsValid) { showToast('Fix unsafe extra flags before launching'); return; }
+
+  // Warn if arch unavailable
+  if (sysInfo && sysInfo.qemu[selectedArch] && !sysInfo.qemu[selectedArch].available) {
+    showToast(`QEMU binary for ${selectedArch} is not installed`);
+    return;
+  }
 
   const btn = document.getElementById('launch-btn');
   const spinner = document.getElementById('launch-spinner');
@@ -1081,8 +1175,8 @@ async function refreshSessions() {
       <div class="session-card">
         <div class="session-dot"></div>
         <div class="session-info">
-          <div class="session-arch">${s.arch.toUpperCase()} &mdash; ${s.memory >= 1024 ? (s.memory/1024).toFixed(1)+'GB' : s.memory+'MB'} RAM / ${s.storage}GB</div>
-          <div class="session-meta">ISO: ${s.iso} &bull; VNC :${s.vnc_port} &bull; Started ${new Date(s.started).toLocaleTimeString()}</div>
+          <div class="session-arch">${s.arch.toUpperCase()} — ${s.memory >= 1024 ? (s.memory/1024).toFixed(1)+'GB' : s.memory+'MB'} RAM / ${s.storage}GB disk</div>
+          <div class="session-meta">ISO: ${s.iso.replace(/^[0-9a-f]{8}_/,'')} · VNC :${s.vnc_port} · Started ${new Date(s.started).toLocaleTimeString()}</div>
         </div>
         <div class="session-actions">
           <a class="btn-sm btn-connect" href="/session/${id}">▶ Connect</a>
@@ -1099,7 +1193,6 @@ async function stopSession(id) {
   refreshSessions();
 }
 
-// Format bytes
 function formatBytes(b) {
   if (b > 1e9) return (b/1e9).toFixed(1) + ' GB';
   if (b > 1e6) return (b/1e6).toFixed(1) + ' MB';
@@ -1107,6 +1200,7 @@ function formatBytes(b) {
 }
 
 // Init
+loadSystemInfo();
 refreshSessions();
 setInterval(refreshSessions, 8000);
 </script>
