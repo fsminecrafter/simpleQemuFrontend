@@ -132,7 +132,3 @@ vncviewer localhost:5900
 ```
 
 ---
-
-## License
-
-MIT
