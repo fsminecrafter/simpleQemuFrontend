@@ -55,6 +55,7 @@
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
     z-index: 100;
+    flex-wrap: wrap;
   }
 
   .toolbar-logo {
@@ -65,10 +66,7 @@
     letter-spacing: -0.02em;
     white-space: nowrap;
   }
-  .toolbar-sep {
-    width: 1px; height: 20px;
-    background: var(--border);
-  }
+  .toolbar-sep { width: 1px; height: 20px; background: var(--border); }
 
   .session-badge {
     background: var(--surface2);
@@ -121,7 +119,6 @@
   .toolbar-btn.danger { border-color: var(--danger); color: var(--danger); }
   .toolbar-btn.danger:hover { background: rgba(255,59,92,0.1); }
 
-  /* Theme toggle */
   .theme-toggle { display:flex; align-items:center; gap:6px; cursor:pointer; }
   .toggle-switch {
     width: 36px; height: 20px;
@@ -185,7 +182,13 @@
     font-weight: 700;
     color: var(--text);
   }
-  .loading-subtitle { font-size: 0.75rem; color: var(--muted); text-align: center; max-width: 340px; }
+  .loading-subtitle {
+    font-size: 0.75rem;
+    color: var(--muted);
+    text-align: center;
+    max-width: 400px;
+    line-height: 1.6;
+  }
   .loading-steps { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
   .loading-step {
     display: flex; align-items: center; gap: 10px;
@@ -208,7 +211,7 @@
     display: none;
     position: absolute;
     inset: 0;
-    background: rgba(10, 11, 14, 0.9);
+    background: rgba(10, 11, 14, 0.92);
     align-items: center;
     justify-content: center;
     flex-direction: column;
@@ -223,7 +226,7 @@
     font-weight: 700;
     color: var(--text);
   }
-  .stopped-sub { font-size: 0.8rem; color: var(--muted); }
+  .stopped-sub { font-size: 0.8rem; color: var(--muted); text-align: center; max-width: 360px; line-height: 1.6; }
 
   /* Status bar */
   .statusbar {
@@ -236,71 +239,10 @@
     font-size: 0.65rem;
     color: var(--muted);
     flex-shrink: 0;
+    flex-wrap: wrap;
   }
   .statusbar-item span { color: var(--text); }
   #statusbar-state { color: var(--accent); font-weight: 500; }
-
-  /* Clipboard / send ctrl-alt-del */
-  .modal-overlay {
-    display: none;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,0.7);
-    z-index: 200;
-    align-items: center;
-    justify-content: center;
-  }
-  .modal-overlay.show { display: flex; }
-  .modal {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 28px;
-    width: 440px;
-    max-width: 90vw;
-  }
-  .modal-title {
-    font-family: 'Syne', sans-serif;
-    font-weight: 700;
-    font-size: 1.1rem;
-    margin-bottom: 16px;
-  }
-  .modal textarea {
-    width: 100%; height: 120px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.8rem;
-    padding: 12px;
-    border-radius: 6px;
-    resize: none;
-    outline: none;
-  }
-  .modal-btns { display: flex; gap: 8px; margin-top: 14px; justify-content: flex-end; }
-  .btn-primary {
-    background: var(--accent2);
-    color: white;
-    border: none;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    padding: 8px 18px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: opacity 0.2s;
-  }
-  .btn-primary:hover { opacity: 0.85; }
-  .btn-secondary {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.75rem;
-    padding: 8px 18px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .btn-secondary:hover { color: var(--text); border-color: var(--text); }
 </style>
 </head>
 <body>
@@ -332,9 +274,9 @@
 
   <!-- Loading -->
   <div class="vnc-loading" id="vnc-loading">
-    <div class="loading-spinner"></div>
-    <div class="loading-title">Starting VM…</div>
-    <div class="loading-subtitle">QEMU is booting your image. The display will appear shortly.</div>
+    <div class="loading-spinner" id="loading-spinner"></div>
+    <div class="loading-title" id="loading-title">Starting VM…</div>
+    <div class="loading-subtitle" id="loading-subtitle">QEMU is booting your image. This may take 10–30 seconds.</div>
     <div class="loading-steps" id="loading-steps">
       <div class="loading-step done" id="ls-qemu"><div class="step-indicator"></div>QEMU process started</div>
       <div class="loading-step active" id="ls-vnc"><div class="step-indicator"></div>Waiting for VNC server…</div>
@@ -343,14 +285,14 @@
     </div>
   </div>
 
-  <!-- noVNC iframe (loaded once VNC is up) -->
-  <iframe id="novnc-iframe" style="display:none;"></iframe>
+  <!-- noVNC iframe -->
+  <iframe id="novnc-iframe" style="display:none;" allow="clipboard-read; clipboard-write"></iframe>
 
   <!-- VM stopped -->
   <div class="vm-stopped" id="vm-stopped">
     <div class="stopped-icon">⏹</div>
     <div class="stopped-title">VM Stopped</div>
-    <div class="stopped-sub">The QEMU process has exited. You can return to the dashboard.</div>
+    <div class="stopped-sub" id="stopped-sub">The QEMU process has exited. You can return to the dashboard.</div>
     <a href="/" class="toolbar-btn" style="margin-top:12px;">← Back to Dashboard</a>
   </div>
 
@@ -358,10 +300,10 @@
 
 <!-- Status bar -->
 <div class="statusbar">
-  <div class="statusbar-item">SESSION: <span>{{ session_id }}</span></div>
+  <div class="statusbar-item">SESSION: <span>{{ session_id[:16] }}…</span></div>
   <div class="statusbar-item">STATUS: <span id="statusbar-state">Connecting…</span></div>
   <div class="statusbar-item">ISO: <span>{{ session.iso }}</span></div>
-  <div class="statusbar-item" id="statusbar-time">UPTIME: <span id="uptime-val">0s</span></div>
+  <div class="statusbar-item">UPTIME: <span id="uptime-val">0s</span></div>
 </div>
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
@@ -370,6 +312,7 @@ const SESSION_ID = "{{ session_id }}";
 const WS_PORT    = {{ session.ws_port }};
 const VNC_PORT   = {{ session.vnc_port }};
 const STARTED    = new Date("{{ session.started }}");
+const HOST       = window.location.hostname;
 
 // Theme
 const html = document.documentElement;
@@ -391,30 +334,26 @@ setInterval(() => {
     (h ? h+'h ' : '') + (m ? m+'m ' : '') + sec + 's';
 }, 1000);
 
-// Socket
+// ── Socket for VM stop events ──
 const socket = io({ secure: true });
 socket.emit('join_session', { session_id: SESSION_ID });
 socket.on('vm_stopped', data => {
-  if (data.session_id === SESSION_ID) showStopped();
+  if (data.session_id === SESSION_ID) showStopped('QEMU process exited.');
 });
 socket.on('session_status', data => {
-  if (!data.running) showStopped();
+  if (!data.running) showStopped('Session is no longer running.');
 });
 
-function showStopped() {
+function showStopped(reason) {
   document.getElementById('vm-stopped').classList.add('show');
   document.getElementById('vnc-loading').classList.add('hidden');
+  document.getElementById('stopped-sub').textContent = reason + ' You can return to the dashboard.';
   document.getElementById('status-dot').style.background = 'var(--danger)';
   document.getElementById('statusbar-state').textContent = 'Stopped';
   document.getElementById('statusbar-state').style.color = 'var(--danger)';
 }
 
-// ── VNC Connection ──
-const iframe = document.getElementById('novnc-iframe');
-let connected = false;
-let retries = 0;
-const MAX_RETRIES = 30;
-
+// ── Step helpers ──
 function stepDone(id) {
   const el = document.getElementById(id);
   if (el) { el.classList.remove('active'); el.classList.add('done'); }
@@ -424,93 +363,104 @@ function stepActive(id) {
   if (el) { el.classList.add('active'); el.classList.remove('done'); }
 }
 
+// ── VNC Connection ──
+// Strategy: poll websockify port with a raw WebSocket (not fetch/https).
+// websockify accepts WS connections on ws://host:port — once it accepts we load noVNC iframe.
+
+const iframe = document.getElementById('novnc-iframe');
+let connected = false;
+let retries = 0;
+const MAX_RETRIES = 40;   // 40 × 2s = 80 seconds total wait
+
 function tryConnectVNC() {
   if (connected) return;
   if (retries >= MAX_RETRIES) {
-    document.querySelector('.loading-subtitle').textContent =
-      'Could not connect to VNC. The VM may have crashed or VNC is not accessible.';
-    document.querySelector('.loading-spinner').style.borderTopColor = 'var(--danger)';
+    showDirectVNCInfo();
     return;
   }
   retries++;
   stepActive('ls-ws');
 
-  // Try to load noVNC via websockify
-  const proto = 'wss';
-  const host = window.location.hostname;
-
-  // Use noVNC auto-connect URL
-  const vncUrl = `/novnc/?host=${host}&port=${WS_PORT}&autoconnect=true&reconnect=true&password=`;
-
-  // Check if websockify is reachable first via a simple fetch
-  fetch(`https://${host}:${WS_PORT}/`, {mode: 'no-cors'})
-    .then(() => {
-      stepDone('ls-vnc');
-      stepDone('ls-ws');
-      stepActive('ls-display');
-
-      iframe.src = vncUrl;
-      iframe.style.display = 'block';
-      iframe.onload = () => {
-        stepDone('ls-display');
-        connected = true;
-        document.getElementById('vnc-loading').classList.add('hidden');
-        document.getElementById('statusbar-state').textContent = 'Connected (noVNC)';
-      };
-    })
-    .catch(() => {
-      setTimeout(tryConnectVNC, 2000);
-    });
+  // Test websockify with a raw WebSocket probe.
+  // websockify speaks ws:// (plain) even when Flask uses https://.
+  const wsProbe = new WebSocket(`ws://${HOST}:${WS_PORT}`);
+  wsProbe.onopen = () => {
+    wsProbe.close();
+    onWebsockifyReady();
+  };
+  wsProbe.onerror = () => {
+    // Not ready yet — retry
+    setTimeout(tryConnectVNC, 2000);
+  };
+  // Timeout safety
+  setTimeout(() => {
+    if (wsProbe.readyState === WebSocket.CONNECTING) {
+      wsProbe.close();
+    }
+  }, 1500);
 }
 
-// Fallback: show direct VNC info if websockify not available
+function onWebsockifyReady() {
+  stepDone('ls-vnc');
+  stepDone('ls-ws');
+  stepActive('ls-display');
+
+  // Find noVNC path — server exposes it via websockify --web
+  // The iframe loads noVNC's vnc.html with autoconnect params.
+  // websockify serves noVNC files on the same port it bridges VNC.
+  const vncUrl = `http://${HOST}:${WS_PORT}/vnc.html?host=${HOST}&port=${WS_PORT}&autoconnect=true&reconnect=true&reconnect_delay=3000&resize=scale&quality=6&compression=2`;
+
+  iframe.src = vncUrl;
+  iframe.style.display = 'block';
+
+  // Hide loading after a moment (noVNC handles its own loading internally)
+  setTimeout(() => {
+    stepDone('ls-display');
+    connected = true;
+    document.getElementById('vnc-loading').classList.add('hidden');
+    document.getElementById('statusbar-state').textContent = 'Connected';
+  }, 2000);
+}
+
 function showDirectVNCInfo() {
-  const loading = document.getElementById('vnc-loading');
-  loading.innerHTML = `
-    <div style="text-align:center; padding: 20px; max-width: 480px;">
-      <div style="font-size:2.5rem; margin-bottom:16px;">🖥️</div>
-      <div style="font-family:'Syne',sans-serif; font-size:1.2rem; font-weight:700; margin-bottom:10px; color:var(--text);">VM Running</div>
-      <div style="color:var(--muted); font-size:0.8rem; margin-bottom:20px; line-height:1.6;">
-        Your VM is running. Connect with a VNC viewer to interact with it.
-      </div>
-      <div style="background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:16px; margin-bottom:16px;">
-        <div style="font-size:0.65rem; color:var(--muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:8px;">VNC Connection Details</div>
-        <div style="font-size:1rem; color:var(--accent);">localhost:${VNC_PORT}</div>
-        <div style="font-size:0.7rem; color:var(--muted); margin-top:4px;">Display :${VNC_PORT - 5900}</div>
-      </div>
-      <div style="font-size:0.7rem; color:var(--muted);">
-        Install <code style="color:var(--accent2)">websockify</code> and <code style="color:var(--accent2)">novnc</code> for in-browser access.<br>
-        Run: <code style="color:var(--accent); background:var(--surface2); padding:2px 6px; border-radius:3px; display:inline-block; margin-top:4px;">bash setup.sh</code>
+  document.getElementById('loading-spinner').style.display = 'none';
+  document.getElementById('loading-title').textContent = 'VM Running';
+  document.getElementById('loading-subtitle').textContent =
+    'WebSocket bridge (websockify) is not reachable. Connect with a VNC viewer:';
+  document.getElementById('loading-steps').innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px;text-align:center;">
+      <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;">VNC Connection</div>
+      <div style="font-size:1.1rem;color:var(--accent);">${HOST}:${VNC_PORT}</div>
+      <div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">Display :${VNC_PORT - 5900}</div>
+      <div style="font-size:0.7rem;color:var(--muted);margin-top:12px;">
+        Make sure <code style="color:var(--accent2)">websockify</code> and <code style="color:var(--accent2)">novnc</code> are installed.<br>
+        Run: <code style="color:var(--accent);background:var(--surface);padding:2px 6px;border-radius:3px;">sudo bash setup.sh</code>
       </div>
     </div>
   `;
+  document.getElementById('statusbar-state').textContent = 'VNC only';
+  document.getElementById('statusbar-state').style.color = 'var(--warning, #ffb84d)';
 }
 
-// Start connection attempts after a short delay (let QEMU init)
+// Start polling after short delay (give QEMU + websockify time to init)
 setTimeout(() => {
   stepDone('ls-qemu');
   stepActive('ls-vnc');
   tryConnectVNC();
-  // Fallback: if no websockify after 15s, show direct info
-  setTimeout(() => {
-    if (!connected) showDirectVNCInfo();
-  }, 15000);
-}, 2500);
+}, 3000);
 
 // ── Controls ──
 function sendCtrlAltDel() {
-  // Send via iframe if connected, else show info
-  if (connected && iframe.contentWindow) {
-    try {
-      iframe.contentWindow.postMessage({action: 'ctrlaltdel'}, '*');
-    } catch(e) {}
-  }
+  // Send via postMessage to noVNC iframe
+  try {
+    iframe.contentWindow.postMessage({action: 'ctrlaltdel'}, '*');
+  } catch(e) {}
 }
 
 function toggleFullscreen() {
   const area = document.getElementById('vnc-area');
   if (!document.fullscreenElement) {
-    area.requestFullscreen();
+    area.requestFullscreen().catch(() => {});
   } else {
     document.exitFullscreen();
   }
@@ -519,7 +469,7 @@ function toggleFullscreen() {
 async function confirmStop() {
   if (!confirm('Stop this VM? All unsaved state will be lost.')) return;
   await fetch(`/api/session/${SESSION_ID}/stop`, { method: 'POST' });
-  showStopped();
+  showStopped('VM stopped by user.');
 }
 </script>
 </body>
