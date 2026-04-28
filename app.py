@@ -34,6 +34,11 @@ MAX_STORAGE_GB  = 512     # 512 GB
 ALLOWED_EXT     = {".iso", ".img", ".qcow2", ".raw", ".vmdk"}
 MAX_ISO_SIZE_GB = 50
 
+SESSION_TTL_MINUTES      = 60      # Kill sessions older than this
+UPLOAD_TTL_MINUTES       = 60      # Delete uploads older than this
+UPLOAD_MAX_SIZE_GB       = 4       # If uploads folder > this => wipe folder
+CLEANUP_INTERVAL_SECONDS = 30      # Cleanup loop frequency
+
 # QEMU binary map per architecture
 QEMU_BINS = {
     "x86":    "qemu-system-i386",
@@ -563,6 +568,102 @@ def on_join(data):
 def on_leave(data):
     leave_room(data.get("session_id"))
 
+# ─────────────────────────────────────────────────────────────
+# CLEANUP TASKS
+# ─────────────────────────────────────────────────────────────
+
+def cleanup_sessions():
+    now = datetime.utcnow()
+    expired = []
+
+    with sessions_lock:
+        for sid, info in list(active_sessions.items()):
+            started = parse_iso(info.get("started", now.isoformat()))
+            age = now - started
+
+            proc = info["process"]
+
+            if proc.poll() is not None:
+                expired.append(sid)
+                continue
+
+            if age > timedelta(minutes=SESSION_TTL_MINUTES):
+                logger.info(f"[cleanup] Session expired: {sid}")
+                terminate_session(sid, info)
+                expired.append(sid)
+
+        for sid in expired:
+            active_sessions.pop(sid, None)
+
+
+def cleanup_uploads():
+    now = datetime.utcnow()
+
+    if not UPLOAD_FOLDER.exists():
+        return
+
+    for file in UPLOAD_FOLDER.iterdir():
+        if not file.is_file():
+            continue
+
+        try:
+            mtime = datetime.utcfromtimestamp(file.stat().st_mtime)
+            age = now - mtime
+
+            if age > timedelta(minutes=UPLOAD_TTL_MINUTES):
+                logger.info(f"[cleanup] Removing expired upload: {file.name}")
+                safe_unlink(file)
+
+        except:
+            pass
+
+
+def enforce_upload_quota():
+    max_bytes = UPLOAD_MAX_SIZE_GB * 1024 * 1024 * 1024
+    used = folder_size_bytes(UPLOAD_FOLDER)
+
+    if used > max_bytes:
+        logger.warning("[cleanup] Upload folder exceeded quota. Wiping uploads.")
+
+        for file in UPLOAD_FOLDER.iterdir():
+            if file.is_file():
+                safe_unlink(file)
+            elif file.is_dir():
+                safe_rmtree(file)
+
+
+def cleanup_orphan_session_dirs():
+    if not SESSION_FOLDER.exists():
+        return
+
+    with sessions_lock:
+        live = set(active_sessions.keys())
+
+    for folder in SESSION_FOLDER.iterdir():
+        if folder.is_dir() and folder.name not in live:
+            logger.info(f"[cleanup] Removing orphaned session dir: {folder.name}")
+            safe_rmtree(folder)
+
+# ─────────────────────────────────────────────────────────────
+# BACKGROUND LOOP
+# ─────────────────────────────────────────────────────────────
+
+def cleanup_loop():
+    while True:
+        try:
+            cleanup_sessions()
+            cleanup_uploads()
+            enforce_upload_quota()
+            cleanup_orphan_session_dirs()
+        except Exception as e:
+            logger.error(f"[cleanup] {e}")
+
+        time.sleep(CLEANUP_INTERVAL_SECONDS)
+
+
+def start_cleanup_thread():
+    t = threading.Thread(target=cleanup_loop, daemon=True)
+    t.start()
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
@@ -571,7 +672,7 @@ if __name__ == "__main__":
     cert_dir = Path("certs")
     cert_dir.mkdir(exist_ok=True)
 
-    if not CERT_FILE.exists() or not KEY_FILE.exists():
+    if not CERT_FILE.exists() or not KEY_FILE.exists():a
         logger.info("Generating self-signed certificate...")
         subprocess.run([
             "openssl", "req", "-x509", "-newkey", "rsa:4096",
