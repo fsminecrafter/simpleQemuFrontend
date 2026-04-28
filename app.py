@@ -146,30 +146,62 @@ SESSION_FOLDER.mkdir(exist_ok=True)
 active_sessions: dict = {}
 sessions_lock = threading.Lock()
 
+# Track allocated ports to avoid race conditions between find and bind
+allocated_vnc_ports: set = set()
+allocated_ws_ports: set = set()
+ports_lock = threading.Lock()
+
 # ─── Helper functions ─────────────────────────────────────────────────────────
 
 def find_free_port(start=5900, end=5999) -> int:
+    """Find a free TCP port and reserve it atomically."""
     import socket
-    for port in range(start, end):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("0.0.0.0", port))
-                return port
-            except OSError:
+    with ports_lock:
+        for port in range(start, end):
+            if port in allocated_vnc_ports:
                 continue
-    raise RuntimeError("No free VNC ports available")
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind(("0.0.0.0", port))
+                    allocated_vnc_ports.add(port)
+                    return port
+                except OSError:
+                    continue
+    raise RuntimeError("No free VNC ports available (5900-5999)")
+
+
+def release_vnc_port(port: int):
+    with ports_lock:
+        allocated_vnc_ports.discard(port)
 
 
 def find_free_websockify_port(start=6900, end=6999) -> int:
+    """Find a free TCP port for websockify and reserve it atomically."""
     import socket
-    for port in range(start, end):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("0.0.0.0", port))
-                return port
-            except OSError:
+    with ports_lock:
+        for port in range(start, end):
+            if port in allocated_ws_ports:
                 continue
-    raise RuntimeError("No free websockify ports available")
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind(("0.0.0.0", port))
+                    allocated_ws_ports.add(port)
+                    return port
+                except OSError:
+                    continue
+    raise RuntimeError("No free websockify ports available (6900-6999)")
+
+
+def release_ws_port(port: int):
+    with ports_lock:
+        allocated_ws_ports.discard(port)
+
+
+def is_kvm_available() -> bool:
+    kvm_path = "/dev/kvm"
+    return os.path.exists(kvm_path) and os.access(kvm_path, os.R_OK | os.W_OK)
 
 
 def build_qemu_command(config: dict, iso_path: str, disk_path: str, vnc_port_offset: int) -> list[str]:
@@ -192,17 +224,32 @@ def build_qemu_command(config: dict, iso_path: str, disk_path: str, vnc_port_off
     ]
 
     # Architecture-specific tweaks
-    if arch in ("arm64",):
+    if arch == "arm64":
         cmd += ["-cpu", "cortex-a57"]
-        cmd += ["-bios", "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd"]
+        # Try common UEFI firmware paths
+        for bios_path in [
+            "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
+            "/usr/share/AAVMF/AAVMF_CODE.fd",
+            "/usr/share/edk2/aarch64/QEMU_EFI.fd",
+        ]:
+            if os.path.exists(bios_path):
+                cmd += ["-bios", bios_path]
+                break
     elif arch == "riscv":
-        cmd += ["-kernel", "/usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.elf"]
+        for fw_path in [
+            "/usr/lib/riscv64-linux-gnu/opensbi/generic/fw_jump.elf",
+            "/usr/share/opensbi/lp64/generic/firmware/fw_jump.elf",
+        ]:
+            if os.path.exists(fw_path):
+                cmd += ["-kernel", fw_path]
+                break
 
-    # KVM acceleration (x86 only, if available)
-    if arch in ("x86", "x86_64"):
-        kvm_path = "/dev/kvm"
-        if os.path.exists(kvm_path) and os.access(kvm_path, os.R_OK | os.W_OK):
-            cmd += ["-enable-kvm", "-cpu", "host"]
+    # KVM acceleration — only for x86/x86_64, and only if actually available
+    if arch in ("x86", "x86_64") and is_kvm_available():
+        cmd += ["-enable-kvm", "-cpu", "host"]
+    elif arch in ("x86", "x86_64"):
+        # Fallback: use a safe generic CPU so QEMU doesn't fail
+        cmd += ["-cpu", "qemu64"]
 
     # Extra flags
     if extra.strip():
@@ -274,7 +321,7 @@ def launch_vm():
     # Check QEMU binary exists
     qemu_bin = QEMU_BINS[arch]
     if not shutil_which(qemu_bin):
-        return jsonify({"error": f"QEMU binary '{qemu_bin}' not found on this system"}), 500
+        return jsonify({"error": f"QEMU binary '{qemu_bin}' not found on this system. Run setup.sh to install it."}), 500
 
     # Sanitize extra flags
     is_safe, clean_flags, reason = sanitize_extra_flags(extra)
@@ -295,7 +342,7 @@ def launch_vm():
     if result.returncode != 0:
         return jsonify({"error": f"Failed to create disk image: {result.stderr}"}), 500
 
-    # Find free VNC port
+    # Find free VNC port (atomically reserved)
     try:
         vnc_port = find_free_port()
         vnc_offset = vnc_port - 5900
@@ -318,18 +365,41 @@ def launch_vm():
             preexec_fn=os.setsid
         )
     except Exception as e:
+        release_vnc_port(vnc_port)
+        release_ws_port(ws_port)
         return jsonify({"error": f"Failed to start QEMU: {e}"}), 500
+
+    # Brief check — if QEMU exits immediately, report the error
+    import time
+    time.sleep(0.5)
+    if proc.poll() is not None:
+        stderr_out = proc.stderr.read().decode(errors="replace")
+        release_vnc_port(vnc_port)
+        release_ws_port(ws_port)
+        logger.error(f"[{session_id}] QEMU failed immediately: {stderr_out}")
+        return jsonify({"error": f"QEMU exited immediately: {stderr_out[:400]}"}), 500
 
     # Launch websockify (VNC → WebSocket bridge)
     ws_proc = None
-    try:
-        ws_proc = subprocess.Popen(
-            ["websockify", "--web", "/usr/share/novnc/", str(ws_port), f"localhost:{vnc_port}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-    except FileNotFoundError:
-        logger.warning("websockify not found — VNC direct only")
+    novnc_path = None
+    for p in ["/usr/share/novnc", "/usr/share/novnc/web", "/opt/novnc"]:
+        if os.path.isdir(p):
+            novnc_path = p
+            break
+
+    websockify_bin = shutil_which("websockify")
+    if websockify_bin and novnc_path:
+        try:
+            ws_proc = subprocess.Popen(
+                [websockify_bin, "--web", novnc_path, str(ws_port), f"localhost:{vnc_port}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            logger.info(f"[{session_id}] websockify started on port {ws_port} → VNC {vnc_port}")
+        except Exception as e:
+            logger.warning(f"websockify failed to start: {e}")
+    else:
+        logger.warning("websockify or noVNC not found — in-browser VNC unavailable. Run setup.sh.")
 
     # Store session
     with sessions_lock:
@@ -363,7 +433,23 @@ def _watch_process(session_id: str):
         return
     proc = info["process"]
     proc.wait()
-    logger.info(f"[{session_id}] QEMU process exited")
+    stderr_out = ""
+    try:
+        stderr_out = proc.stderr.read().decode(errors="replace")
+    except Exception:
+        pass
+    if stderr_out:
+        logger.warning(f"[{session_id}] QEMU stderr: {stderr_out[:500]}")
+    logger.info(f"[{session_id}] QEMU process exited (code {proc.returncode})")
+
+    # Release ports
+    vnc_port = info.get("vnc_port")
+    ws_port  = info.get("ws_port")
+    if vnc_port:
+        release_vnc_port(vnc_port)
+    if ws_port:
+        release_ws_port(ws_port)
+
     socketio.emit("vm_stopped", {"session_id": session_id}, room=session_id)
 
 
@@ -414,6 +500,13 @@ def stop_session(session_id: str):
         except Exception:
             pass
 
+    vnc_port = info.get("vnc_port")
+    ws_port  = info.get("ws_port")
+    if vnc_port:
+        release_vnc_port(vnc_port)
+    if ws_port:
+        release_ws_port(ws_port)
+
     with sessions_lock:
         active_sessions.pop(session_id, None)
 
@@ -426,6 +519,23 @@ def validate_flags():
     flags = data.get("flags", "")
     is_safe, clean, reason = sanitize_extra_flags(flags)
     return jsonify({"safe": is_safe, "cleaned": clean, "reason": reason})
+
+
+@app.route("/api/system_info")
+def system_info():
+    """Return info about available QEMU binaries and features."""
+    info = {}
+    for arch, binary in QEMU_BINS.items():
+        info[arch] = {
+            "available": bool(shutil_which(binary)),
+            "binary": binary,
+        }
+    return jsonify({
+        "qemu": info,
+        "kvm": is_kvm_available(),
+        "websockify": bool(shutil_which("websockify")),
+        "novnc": any(os.path.isdir(p) for p in ["/usr/share/novnc", "/usr/share/novnc/web", "/opt/novnc"]),
+    })
 
 
 def shutil_which(name):
