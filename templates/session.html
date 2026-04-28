@@ -365,7 +365,7 @@ function stepActive(id) {
 
 // ── VNC Connection ──
 // Strategy: poll websockify port with a raw WebSocket (not fetch/https).
-// websockify accepts WS connections on ws://host:port — once it accepts we load noVNC iframe.
+// websockify accepts WSS connections on wss://host:port — once it accepts we load noVNC iframe.
 
 const iframe = document.getElementById('novnc-iframe');
 let connected = false;
@@ -383,7 +383,8 @@ function tryConnectVNC() {
 
   // Test websockify with a raw WebSocket probe.
   // websockify speaks ws:// (plain) even when Flask uses https://.
-  const wsProbe = new WebSocket(`ws://${HOST}:${WS_PORT}`);
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const wsProbe = new WebSocket(`${proto}://${HOST}:${WS_PORT}`);
   wsProbe.onopen = () => {
     wsProbe.close();
     onWebsockifyReady();
@@ -408,7 +409,9 @@ function onWebsockifyReady() {
   // Find noVNC path — server exposes it via websockify --web
   // The iframe loads noVNC's vnc.html with autoconnect params.
   // websockify serves noVNC files on the same port it bridges VNC.
-  const vncUrl = `http://${HOST}:${WS_PORT}/vnc.html?host=${HOST}&port=${WS_PORT}&autoconnect=true&reconnect=true&reconnect_delay=3000&resize=scale&quality=6&compression=2`;
+ const httpProto = location.protocol === "https:" ? "https" : "http";
+  
+  const vncUrl = `${httpProto}://${HOST}:${WS_PORT}/vnc.html?host=${HOST}&port=${WS_PORT}&autoconnect=true&reconnect=true&reconnect_delay=3000&resize=scale&quality=6&compression=2`;
 
   iframe.src = vncUrl;
   iframe.style.display = 'block';
