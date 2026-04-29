@@ -673,13 +673,13 @@ if __name__ == "__main__":
     cert_dir.mkdir(exist_ok=True)
 
     if not CERT_FILE.exists() or not KEY_FILE.exists():a
-        logger.info("Generating self-signed certificate...")
-        subprocess.run([
-            "openssl", "req", "-x509", "-newkey", "rsa:4096",
-            "-keyout", str(KEY_FILE), "-out", str(CERT_FILE),
-            "-days", "3650", "-nodes",
-            "-subj", "/CN=qemu-frontend/O=Local/C=US"
-        ], check=True)
+    logger.info("Generating self-signed certificate...")
+    subprocess.run([
+         "openssl", "req", "-x509", "-newkey", "rsa:4096",
+        "-keyout", str(KEY_FILE), "-out", str(CERT_FILE),
+        "-days", "3650", "-nodes",
+        "-subj", "/CN=qemu-frontend/O=Local/C=US"
+    ], check=True)
 
     ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ssl_context.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
