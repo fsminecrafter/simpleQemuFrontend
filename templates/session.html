@@ -45,7 +45,6 @@
     transition: background 0.3s;
   }
 
-  /* Toolbar */
   .toolbar {
     display: flex;
     align-items: center;
@@ -140,7 +139,6 @@
   [data-theme="light"] .toggle-switch { background: var(--accent); border-color: var(--accent); }
   [data-theme="light"] .toggle-switch::after { transform:translateX(16px); background:white; }
 
-  /* VNC area */
   .vnc-area {
     flex: 1;
     display: flex;
@@ -152,7 +150,6 @@
     background: #000;
   }
 
-  /* Loading overlay */
   .vnc-loading {
     position: absolute;
     inset: 0;
@@ -206,7 +203,6 @@
     display: block;
   }
 
-  /* Stopped overlay */
   .vm-stopped {
     display: none;
     position: absolute;
@@ -228,7 +224,6 @@
   }
   .stopped-sub { font-size: 0.8rem; color: var(--muted); text-align: center; max-width: 360px; line-height: 1.6; }
 
-  /* Status bar */
   .statusbar {
     background: var(--surface);
     border-top: 1px solid var(--border);
@@ -246,7 +241,6 @@
 </style>
 </head>
 <body>
-<!-- Toolbar -->
 <div class="toolbar">
   <div class="toolbar-logo">[QEMU]</div>
   <div class="toolbar-sep"></div>
@@ -269,10 +263,8 @@
   <a class="toolbar-btn" href="/">← Dashboard</a>
 </div>
 
-<!-- VNC area -->
 <div class="vnc-area" id="vnc-area">
 
-  <!-- Loading -->
   <div class="vnc-loading" id="vnc-loading">
     <div class="loading-spinner" id="loading-spinner"></div>
     <div class="loading-title" id="loading-title">Starting VM…</div>
@@ -285,10 +277,8 @@
     </div>
   </div>
 
-  <!-- noVNC iframe -->
   <iframe id="novnc-iframe" style="display:none;" allow="clipboard-read; clipboard-write"></iframe>
 
-  <!-- VM stopped -->
   <div class="vm-stopped" id="vm-stopped">
     <div class="stopped-icon">⏹</div>
     <div class="stopped-title">VM Stopped</div>
@@ -298,7 +288,6 @@
 
 </div>
 
-<!-- Status bar -->
 <div class="statusbar">
   <div class="statusbar-item">SESSION: <span>{{ session_id[:16] }}…</span></div>
   <div class="statusbar-item">STATUS: <span id="statusbar-state">Connecting…</span></div>
@@ -309,6 +298,8 @@
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
 const SESSION_ID = "{{ session_id }}";
+// websockify runs plain (no SSL) on localhost — browser connects to it via ws://
+// Flask itself is HTTPS so no second certificate to trust.
 const WS_PORT    = {{ session.ws_port }};
 const VNC_PORT   = {{ session.vnc_port }};
 const STARTED    = new Date("{{ session.started }}");
@@ -334,7 +325,7 @@ setInterval(() => {
     (h ? h+'h ' : '') + (m ? m+'m ' : '') + sec + 's';
 }, 1000);
 
-// ── Socket for VM stop events ──
+// Socket for VM stop events
 const socket = io({ secure: true });
 socket.emit('join_session', { session_id: SESSION_ID });
 socket.on('vm_stopped', data => {
@@ -353,7 +344,6 @@ function showStopped(reason) {
   document.getElementById('statusbar-state').style.color = 'var(--danger)';
 }
 
-// ── Step helpers ──
 function stepDone(id) {
   const el = document.getElementById(id);
   if (el) { el.classList.remove('active'); el.classList.add('done'); }
@@ -363,14 +353,15 @@ function stepActive(id) {
   if (el) { el.classList.add('active'); el.classList.remove('done'); }
 }
 
-// ── VNC Connection ──
-// Strategy: poll websockify port with a raw WebSocket (not fetch/https).
-// websockify accepts WSS connections on wss://host:port — once it accepts we load noVNC iframe.
+// ── VNC Connection ──────────────────────────────────────────────────────────
+// websockify runs plain ws:// (no SSL) because it only listens on 127.0.0.1
+// and the browser is on the same host or on a trusted LAN.
+// noVNC is served through Flask at /novnc/ — same origin, same trusted cert.
 
 const iframe = document.getElementById('novnc-iframe');
 let connected = false;
 let retries = 0;
-const MAX_RETRIES = 40;   // 40 × 2s = 80 seconds total wait
+const MAX_RETRIES = 40;
 
 function tryConnectVNC() {
   if (connected) return;
@@ -381,23 +372,17 @@ function tryConnectVNC() {
   retries++;
   stepActive('ls-ws');
 
-  // Test websockify with a raw WebSocket probe.
-  // websockify speaks ws:// (plain) even when Flask uses https://.
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const wsProbe = new WebSocket(`${proto}://${HOST}:${WS_PORT}`);
+  // websockify is plain ws:// (no TLS) — avoids second-certificate warning
+  const wsProbe = new WebSocket(`ws://${HOST}:${WS_PORT}`);
   wsProbe.onopen = () => {
     wsProbe.close();
     onWebsockifyReady();
   };
   wsProbe.onerror = () => {
-    // Not ready yet — retry
     setTimeout(tryConnectVNC, 2000);
   };
-  // Timeout safety
   setTimeout(() => {
-    if (wsProbe.readyState === WebSocket.CONNECTING) {
-      wsProbe.close();
-    }
+    if (wsProbe.readyState === WebSocket.CONNECTING) wsProbe.close();
   }, 1500);
 }
 
@@ -406,17 +391,14 @@ function onWebsockifyReady() {
   stepDone('ls-ws');
   stepActive('ls-display');
 
-  // Find noVNC path — server exposes it via websockify --web
-  // The iframe loads noVNC's vnc.html with autoconnect params.
-  // websockify serves noVNC files on the same port it bridges VNC.
- const httpProto = location.protocol === "https:" ? "https" : "http";
-  
-  const vncUrl = `${httpProto}://${HOST}:${WS_PORT}/vnc.html?host=${HOST}&port=${WS_PORT}&autoconnect=true&reconnect=true&reconnect_delay=3000&resize=scale&quality=6&compression=2`;
+  // noVNC HTML is served through Flask (/novnc/vnc.html) — same HTTPS origin.
+  // websockify WebSocket uses plain ws:// on WS_PORT.
+  // autoconnect=true makes noVNC connect immediately on load.
+  const vncUrl = `/novnc/vnc.html?host=${HOST}&port=${WS_PORT}&path=&encrypt=0&autoconnect=true&reconnect=true&reconnect_delay=3000&resize=scale&quality=6&compression=2`;
 
   iframe.src = vncUrl;
   iframe.style.display = 'block';
 
-  // Hide loading after a moment (noVNC handles its own loading internally)
   setTimeout(() => {
     stepDone('ls-display');
     connected = true;
@@ -445,19 +427,15 @@ function showDirectVNCInfo() {
   document.getElementById('statusbar-state').style.color = 'var(--warning, #ffb84d)';
 }
 
-// Start polling after short delay (give QEMU + websockify time to init)
 setTimeout(() => {
   stepDone('ls-qemu');
   stepActive('ls-vnc');
   tryConnectVNC();
 }, 3000);
 
-// ── Controls ──
+// Controls
 function sendCtrlAltDel() {
-  // Send via postMessage to noVNC iframe
-  try {
-    iframe.contentWindow.postMessage({action: 'ctrlaltdel'}, '*');
-  } catch(e) {}
+  try { iframe.contentWindow.postMessage({action: 'ctrlaltdel'}, '*'); } catch(e) {}
 }
 
 function toggleFullscreen() {
