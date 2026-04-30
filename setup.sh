@@ -98,7 +98,6 @@ install_system_deps() {
     ok "pip3 present"
   fi
 
-  # python3-venv for Debian/Ubuntu
   if [[ "$PKG_MANAGER" == "apt" ]]; then
     if ! python3 -c "import venv" &>/dev/null 2>&1; then
       pkgs+=(python3-venv)
@@ -112,17 +111,17 @@ install_system_deps() {
     ok "openssl present"
   fi
 
-  # ── QEMU — install ALL emulators ──
+  # ── QEMU ──
   head "Installing QEMU Emulators"
   info "Installing all QEMU system emulators (x86, ARM, RISC-V, etc.)…"
 
   if [[ "$PKG_MANAGER" == "apt" ]]; then
     local qemu_pkgs=(
-      qemu-system          # meta-package: all architectures
-      qemu-system-x86      # x86 + x86_64 (qemu-system-i386, qemu-system-x86_64)
-      qemu-system-arm      # arm32 + arm64 (qemu-system-arm, qemu-system-aarch64)
-      qemu-system-misc     # riscv64, s390x, and others
-      qemu-utils           # qemu-img
+      qemu-system
+      qemu-system-x86
+      qemu-system-arm
+      qemu-system-misc
+      qemu-utils
     )
     for pkg in "${qemu_pkgs[@]}"; do
       if ! dpkg -l "$pkg" &>/dev/null 2>&1; then
@@ -134,33 +133,21 @@ install_system_deps() {
 
   elif [[ "$PKG_MANAGER" == "dnf" || "$PKG_MANAGER" == "yum" ]]; then
     local qemu_pkgs=(
-      qemu-system-x86
-      qemu-system-arm
-      qemu-system-aarch64
-      qemu-system-riscv
-      qemu-img
-      qemu-common
+      qemu-system-x86 qemu-system-arm qemu-system-aarch64
+      qemu-system-riscv qemu-img qemu-common
     )
-    for pkg in "${qemu_pkgs[@]}"; do
-      pkgs+=("$pkg")
-    done
+    for pkg in "${qemu_pkgs[@]}"; do pkgs+=("$pkg"); done
 
   elif [[ "$PKG_MANAGER" == "pacman" ]]; then
     local qemu_pkgs=(qemu-full qemu-img)
     for pkg in "${qemu_pkgs[@]}"; do
-      if ! pacman -Qi "$pkg" &>/dev/null 2>&1; then
-        pkgs+=("$pkg")
-      else
-        ok "$pkg already installed"
-      fi
+      if ! pacman -Qi "$pkg" &>/dev/null 2>&1; then pkgs+=("$pkg"); else ok "$pkg already installed"; fi
     done
   fi
 
-  # ── ARM64 UEFI firmware ──
   if [[ "$PKG_MANAGER" == "apt" ]]; then
     if ! dpkg -l qemu-efi-aarch64 &>/dev/null 2>&1; then
       pkgs+=(qemu-efi-aarch64)
-      info "Adding ARM64 UEFI firmware (qemu-efi-aarch64)"
     else
       ok "qemu-efi-aarch64 already installed"
     fi
@@ -170,34 +157,18 @@ install_system_deps() {
   head "Installing noVNC and websockify"
   if [[ "$PKG_MANAGER" == "apt" ]]; then
     local novnc_pkgs=()
-    if ! dpkg -l novnc &>/dev/null 2>&1; then
-      novnc_pkgs+=(novnc)
-    else
-      ok "novnc already installed"
-    fi
-    if ! dpkg -l websockify &>/dev/null 2>&1; then
-      novnc_pkgs+=(websockify)
-    else
-      ok "websockify already installed"
-    fi
+    ! dpkg -l novnc &>/dev/null 2>&1      && novnc_pkgs+=(novnc)      || ok "novnc already installed"
+    ! dpkg -l websockify &>/dev/null 2>&1 && novnc_pkgs+=(websockify) || ok "websockify already installed"
     pkgs+=("${novnc_pkgs[@]}")
-
   elif [[ "$PKG_MANAGER" == "dnf" || "$PKG_MANAGER" == "yum" ]]; then
-    # noVNC may not be in default repos — try pip fallback
     if ! command -v websockify &>/dev/null; then
       warn "websockify not in repos — will install via pip after"
     fi
-    if ! rpm -q novnc &>/dev/null 2>&1; then
-      pkgs+=(novnc) 2>/dev/null || true
-    fi
-
+    rpm -q novnc &>/dev/null 2>&1 || pkgs+=(novnc) 2>/dev/null || true
   elif [[ "$PKG_MANAGER" == "pacman" ]]; then
-    if ! pacman -Qi novnc &>/dev/null 2>&1; then
-      pkgs+=(novnc)
-    fi
+    pacman -Qi novnc &>/dev/null 2>&1 || pkgs+=(novnc)
   fi
 
-  # ── Install collected packages ──
   if [[ ${#pkgs[@]} -gt 0 ]]; then
     info "Installing packages: ${pkgs[*]}"
     $PKG_INSTALL "${pkgs[@]}" || warn "Some packages may have failed — check output above"
@@ -208,12 +179,8 @@ install_system_deps() {
   # ── Verify QEMU binaries ──
   head "Verifying QEMU Binaries"
   local qemu_bins=(
-    qemu-system-i386
-    qemu-system-x86_64
-    qemu-system-arm
-    qemu-system-aarch64
-    qemu-system-riscv64
-    qemu-img
+    qemu-system-i386 qemu-system-x86_64 qemu-system-arm
+    qemu-system-aarch64 qemu-system-riscv64 qemu-img
   )
   local missing_bins=()
   for bin in "${qemu_bins[@]}"; do
@@ -224,10 +191,7 @@ install_system_deps() {
       missing_bins+=("$bin")
     fi
   done
-  if [[ ${#missing_bins[@]} -gt 0 ]]; then
-    warn "Some QEMU binaries are missing: ${missing_bins[*]}"
-    warn "These architectures will be unavailable in the frontend."
-  fi
+  [[ ${#missing_bins[@]} -gt 0 ]] && warn "Missing binaries: ${missing_bins[*]} — these archs will be unavailable"
 
   # ── Verify noVNC ──
   head "Verifying noVNC / websockify"
@@ -239,18 +203,13 @@ install_system_deps() {
       break
     fi
   done
-
-  if ! $novnc_found; then
-    warn "noVNC web directory not found. Trying pip install…"
-    install_novnc_pip
-  fi
+  $novnc_found || install_novnc_pip
 
   if command -v websockify &>/dev/null; then
     ok "websockify found: $(command -v websockify)"
   else
     warn "websockify not found. Trying pip install…"
-    pip3 install websockify 2>/dev/null || \
-      warn "pip install websockify failed — in-browser VNC will not work"
+    pip3 install websockify 2>/dev/null || warn "pip install websockify failed"
   fi
 
   ok "System packages done"
@@ -259,15 +218,13 @@ install_system_deps() {
 install_novnc_pip() {
   info "Installing noVNC via pip…"
   pip3 install novnc 2>/dev/null || true
-
-  # Try downloading from GitHub as a last resort
   if ! [[ -d /usr/share/novnc ]]; then
     if command -v git &>/dev/null; then
       info "Cloning noVNC from GitHub to /opt/novnc…"
       git clone --depth=1 https://github.com/novnc/noVNC.git /opt/novnc 2>/dev/null || \
-        warn "Could not clone noVNC. In-browser VNC will fall back to direct VNC info."
+        warn "Could not clone noVNC."
     else
-      warn "git not found — cannot clone noVNC. Install git and re-run, or install novnc manually."
+      warn "git not found — cannot clone noVNC."
     fi
   fi
 }
@@ -276,7 +233,6 @@ install_novnc_pip() {
 install_python_deps() {
   head "Installing Python Dependencies"
 
-  # Ensure python3-venv is installed before attempting to create venv
   if [[ "$PKG_MANAGER" == "apt" ]]; then
     info "Ensuring python3-venv is installed..."
     apt-get install -y python3-venv python3-pip -qq || warn "Could not install python3-venv via apt"
@@ -286,7 +242,6 @@ install_python_deps() {
 
   VENV_DIR="$APP_DIR/venv"
 
-  # Always remove and recreate venv to avoid broken envs
   if [[ -d "$VENV_DIR" ]]; then
     info "Removing existing venv at $VENV_DIR..."
     rm -rf "$VENV_DIR"
@@ -330,7 +285,7 @@ setup_ssl() {
     2>/dev/null
   chmod 600 "$CERT_DIR/server.key"
   ok "Certificate generated: $CERT_DIR/server.crt"
-  warn "This is a self-signed cert — your browser will show a warning. Accept it to continue."
+  warn "Self-signed cert — browser will warn once. Click Advanced → Proceed."
 }
 
 # ── Firewall ─────────────────────────────────────────────────────
@@ -342,13 +297,11 @@ setup_firewall() {
   fi
 
   if command -v ufw &>/dev/null; then
-    info "Using ufw…"
     ufw allow "$PORT/tcp" comment "QEMU Web Frontend" || warn "ufw rule failed"
     ok "ufw: port $PORT allowed"
   fi
 
   if command -v firewall-cmd &>/dev/null && systemctl is-active --quiet firewalld; then
-    info "Using firewalld…"
     firewall-cmd --permanent --add-port="$PORT/tcp" || warn "firewalld rule failed"
     firewall-cmd --reload || true
     ok "firewalld: port $PORT allowed"
@@ -364,9 +317,7 @@ setup_firewall() {
   fi
 
   if ask_yn "Also allow VNC port range 5900-5999 (for external VNC clients)?"; then
-    if command -v ufw &>/dev/null; then
-      ufw allow 5900:5999/tcp comment "QEMU VNC" || true
-    fi
+    command -v ufw &>/dev/null && ufw allow 5900:5999/tcp comment "QEMU VNC" || true
     if command -v firewall-cmd &>/dev/null && systemctl is-active --quiet firewalld; then
       firewall-cmd --permanent --add-port=5900-5999/tcp || true
       firewall-cmd --reload || true
@@ -384,15 +335,13 @@ setup_kvm() {
     if groups "$user" 2>/dev/null | grep -q kvm; then
       ok "User '$user' already in kvm group"
     else
-      if ask_yn "Add user '$user' to the kvm group (enables hardware acceleration)?"; then
+      if ask_yn "Add user '$user' to the kvm group?"; then
         usermod -aG kvm "$user" || warn "Could not add to kvm group"
         ok "Added $user to kvm group (log out/in to take effect)"
       fi
     fi
   else
-    warn "/dev/kvm not found — KVM acceleration unavailable"
-    warn "This is normal in VMs or systems without VT-x/AMD-V enabled in BIOS"
-    warn "Emulation will still work, just slower"
+    warn "/dev/kvm not found — KVM acceleration unavailable (emulation still works, just slower)"
   fi
 }
 
@@ -406,7 +355,7 @@ setup_service() {
 
   [[ $EUID -ne 0 ]] && err "Root required to install systemd service. Run: sudo bash setup.sh"
 
-  local run_user="${SUDO_USER:-root}"
+  # Always run as root: QEMU needs /dev/kvm, websockify needs low ports, etc.
   local python_bin
   if [[ -f "$APP_DIR/venv/bin/python" ]]; then
     python_bin="$APP_DIR/venv/bin/python"
@@ -422,7 +371,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=${run_user}
+User=root
 WorkingDirectory=${APP_DIR}
 ExecStart=${python_bin} ${APP_FILE}
 Restart=on-failure
@@ -431,12 +380,6 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=${SERVICE_NAME}
 
-# Security hardening
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=strict
-ReadWritePaths=${APP_DIR}/uploads ${APP_DIR}/sessions ${APP_DIR}/certs
-
 [Install]
 WantedBy=multi-user.target
 EOF
@@ -444,6 +387,7 @@ EOF
   systemctl daemon-reload
   systemctl enable "$SERVICE_NAME"
   ok "Service installed: $SERVICE_FILE"
+  ok "Runs as: root using ${python_bin}"
 
   if ask_yn "Start the service now?"; then
     systemctl start "$SERVICE_NAME"
@@ -480,29 +424,28 @@ print_summary() {
   echo -e "  ${GREEN}https://$(hostname -I 2>/dev/null | awk '{print $1}' || echo localhost):${PORT}${RESET}"
   echo -e "  ${GREEN}https://localhost:${PORT}${RESET}"
   echo ""
-  echo -e "  ${BOLD}To start manually:${RESET}"
+  echo -e "  ${BOLD}To start manually (must be root for KVM + port access):${RESET}"
   if [[ -f "$APP_DIR/venv/bin/python" ]]; then
-    echo -e "  ${CYAN}cd $APP_DIR && venv/bin/python app.py${RESET}"
+    echo -e "  ${CYAN}cd $APP_DIR && sudo venv/bin/python app.py${RESET}"
   else
-    echo -e "  ${CYAN}cd $APP_DIR && python3 app.py${RESET}"
+    echo -e "  ${CYAN}cd $APP_DIR && sudo python3 app.py${RESET}"
   fi
   echo ""
+  echo -e "  ${BOLD}SSL trust:${RESET}"
+  echo -e "  Open ${GREEN}https://YOUR-IP:${PORT}${RESET} and click ${YELLOW}Advanced → Proceed${RESET}"
+  echo -e "  That's it — noVNC now loads through Flask so ${GREEN}no second popup${RESET}."
+  echo ""
 
-  # Final status check
   echo -e "  ${BOLD}Component Status:${RESET}"
   for bin in qemu-system-i386 qemu-system-x86_64 qemu-system-arm qemu-system-aarch64 qemu-system-riscv64; do
-    if command -v "$bin" &>/dev/null; then
-      echo -e "  ${GREEN}✓${RESET} $bin"
-    else
-      echo -e "  ${RED}✗${RESET} $bin (unavailable)"
-    fi
+    command -v "$bin" &>/dev/null \
+      && echo -e "  ${GREEN}✓${RESET} $bin" \
+      || echo -e "  ${RED}✗${RESET} $bin (unavailable)"
   done
   for tool in websockify qemu-img openssl; do
-    if command -v "$tool" &>/dev/null; then
-      echo -e "  ${GREEN}✓${RESET} $tool"
-    else
-      echo -e "  ${YELLOW}⚠${RESET} $tool (not found)"
-    fi
+    command -v "$tool" &>/dev/null \
+      && echo -e "  ${GREEN}✓${RESET} $tool" \
+      || echo -e "  ${YELLOW}⚠${RESET} $tool (not found)"
   done
   for p in /usr/share/novnc /opt/novnc; do
     if [[ -d "$p" ]]; then
@@ -512,7 +455,7 @@ print_summary() {
   done
   echo ""
 
-  warn "Browser will show a certificate warning — click 'Advanced' → 'Proceed'"
+  warn "Browser will show a certificate warning — click 'Advanced' → 'Proceed' once."
   echo ""
 }
 
