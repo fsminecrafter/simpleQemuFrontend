@@ -14,10 +14,12 @@ import threading
 import signal
 import ssl
 import logging
+import time
+import shutil
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory, Response
 from flask_socketio import SocketIO, emit, join_room, leave_room
 import werkzeug
 from werkzeug.utils import secure_filename
@@ -34,12 +36,11 @@ MAX_STORAGE_GB  = 512     # 512 GB
 ALLOWED_EXT     = {".iso", ".img", ".qcow2", ".raw", ".vmdk"}
 MAX_ISO_SIZE_GB = 50
 
-SESSION_TTL_MINUTES      = 60      # Kill sessions older than this
-UPLOAD_TTL_MINUTES       = 60      # Delete uploads older than this
-UPLOAD_MAX_SIZE_GB       = 4       # If uploads folder > this => wipe folder
-CLEANUP_INTERVAL_SECONDS = 30      # Cleanup loop frequency
+SESSION_TTL_MINUTES      = 60
+UPLOAD_TTL_MINUTES       = 60
+UPLOAD_MAX_SIZE_GB       = 4
+CLEANUP_INTERVAL_SECONDS = 30
 
-# QEMU binary map per architecture
 QEMU_BINS = {
     "x86":    "qemu-system-i386",
     "x86_64": "qemu-system-x86_64",
@@ -48,7 +49,6 @@ QEMU_BINS = {
     "riscv":  "qemu-system-riscv64",
 }
 
-# Default machine types per arch
 QEMU_MACHINES = {
     "x86":    "pc",
     "x86_64": "q35",
@@ -60,69 +60,51 @@ QEMU_MACHINES = {
 # ─── Security: Flag injection patterns ────────────────────────────────────────
 
 INJECTION_PATTERNS = [
-    r"[;&|`$]",            # shell metacharacters
-    r"\.\./",              # path traversal
-    r"rm\s+-",             # rm commands
-    r"mkfs",               # format commands
-    r"dd\s+if=",           # dd overwrite
-    r"chmod\s+777",        # dangerous permission
-    r">/dev/",             # device writes
-    r"curl\s+.*\s*\|",     # curl pipe
-    r"wget\s+.*\s*\|",     # wget pipe
-    r"bash\s+-c",          # bash exec
-    r"python.*-c",         # python exec
-    r"exec\s+",            # exec calls
-    r"eval\s+",            # eval calls
-    r"\$\(",               # command substitution
-    r"`.*`",               # backtick execution
-    r"nc\s+-",             # netcat
-    r"ncat\s+",            # ncat
-    r"/etc/passwd",        # sensitive files
+    r"[;&|`$]",
+    r"\.\./",
+    r"rm\s+-",
+    r"mkfs",
+    r"dd\s+if=",
+    r"chmod\s+777",
+    r">/dev/",
+    r"curl\s+.*\s*\|",
+    r"wget\s+.*\s*\|",
+    r"bash\s+-c",
+    r"python.*-c",
+    r"exec\s+",
+    r"eval\s+",
+    r"\$\(",
+    r"`.*`",
+    r"nc\s+-",
+    r"ncat\s+",
+    r"/etc/passwd",
     r"/etc/shadow",
-    r"--daemonize",        # prevent QEMU daemonize (we manage that)
-    r"-monitor\s+stdio",   # don't allow stdio monitor (we use our own)
+    r"--daemonize",
+    r"-monitor\s+stdio",
 ]
 
-ALLOWED_EXTRA_FLAGS_PATTERN = re.compile(
-    r"^(-device\s+[\w,=.\-]+|-netdev\s+[\w,=.\-]+|-drive\s+[\w,=./\-]+"
-    r"|-usb|-usbdevice\s+\w+|-boot\s+[a-z,=]+"
-    r"|-vga\s+\w+|-display\s+\w+|-cpu\s+[\w,.\-]+"
-    r"|-smp\s+[\d,=]+"
-    r"|-rtc\s+[\w,=]+"
-    r")*$",
-    re.IGNORECASE
-)
 
-
-def sanitize_extra_flags(flags_str: str) -> tuple[bool, str, str]:
-    """
-    Returns (is_safe, sanitized_flags, reason_if_unsafe)
-    """
+def sanitize_extra_flags(flags_str: str) -> tuple:
     if not flags_str or not flags_str.strip():
         return True, "", ""
 
-    # Check injection patterns
     for pattern in INJECTION_PATTERNS:
         if re.search(pattern, flags_str, re.IGNORECASE):
             return False, "", f"Potentially malicious pattern detected: {pattern}"
 
-    # Split into individual flags for validation
     try:
         parts = shlex.split(flags_str)
     except ValueError as e:
         return False, "", f"Invalid flag syntax: {e}"
 
-    # Rebuild cleaned flags
     clean_flags = []
     i = 0
     while i < len(parts):
         part = parts[i]
         if part.startswith("-"):
             clean_flags.append(part)
-            # consume the value if next part doesn't start with -
             if i + 1 < len(parts) and not parts[i+1].startswith("-"):
                 val = parts[i+1]
-                # validate value: only safe chars
                 if not re.match(r'^[\w,=./:\-@]+$', val):
                     return False, "", f"Unsafe value in flag: {val}"
                 clean_flags.append(val)
@@ -147,11 +129,9 @@ logger = logging.getLogger("qemu-frontend")
 UPLOAD_FOLDER.mkdir(exist_ok=True)
 SESSION_FOLDER.mkdir(exist_ok=True)
 
-# Active QEMU sessions: session_id -> {process, vnc_port, ...}
 active_sessions: dict = {}
 sessions_lock = threading.Lock()
 
-# Track allocated ports to avoid race conditions between find and bind
 allocated_vnc_ports: set = set()
 allocated_ws_ports: set = set()
 ports_lock = threading.Lock()
@@ -159,7 +139,6 @@ ports_lock = threading.Lock()
 # ─── Helper functions ─────────────────────────────────────────────────────────
 
 def find_free_port(start=5900, end=5999) -> int:
-    """Find a free TCP port and reserve it atomically."""
     import socket
     with ports_lock:
         for port in range(start, end):
@@ -182,7 +161,6 @@ def release_vnc_port(port: int):
 
 
 def find_free_websockify_port(start=6900, end=6999) -> int:
-    """Find a free TCP port for websockify and reserve it atomically."""
     import socket
     with ports_lock:
         for port in range(start, end):
@@ -209,7 +187,11 @@ def is_kvm_available() -> bool:
     return os.path.exists(kvm_path) and os.access(kvm_path, os.R_OK | os.W_OK)
 
 
-def build_qemu_command(config: dict, iso_path: str, disk_path: str, vnc_port_offset: int) -> list[str]:
+def shutil_which(name):
+    return shutil.which(name)
+
+
+def build_qemu_command(config: dict, iso_path: str, disk_path: str, vnc_port_offset: int) -> list:
     arch      = config["arch"]
     memory    = int(config["memory"])
     extra     = config.get("extra_flags", "")
@@ -228,10 +210,8 @@ def build_qemu_command(config: dict, iso_path: str, disk_path: str, vnc_port_off
         "-no-reboot",
     ]
 
-    # Architecture-specific tweaks
     if arch == "arm64":
         cmd += ["-cpu", "cortex-a57"]
-        # Try common UEFI firmware paths
         for bios_path in [
             "/usr/share/qemu-efi-aarch64/QEMU_EFI.fd",
             "/usr/share/AAVMF/AAVMF_CODE.fd",
@@ -249,18 +229,44 @@ def build_qemu_command(config: dict, iso_path: str, disk_path: str, vnc_port_off
                 cmd += ["-kernel", fw_path]
                 break
 
-    # KVM acceleration — only for x86/x86_64, and only if actually available
     if arch in ("x86", "x86_64") and is_kvm_available():
         cmd += ["-enable-kvm", "-cpu", "host"]
     elif arch in ("x86", "x86_64"):
-        # Fallback: use a safe generic CPU so QEMU doesn't fail
         cmd += ["-cpu", "qemu64"]
 
-    # Extra flags
     if extra.strip():
         cmd += shlex.split(extra)
 
     return cmd
+
+
+# ─── noVNC static file proxy ─────────────────────────────────────────────────
+# Serving noVNC files through Flask means the browser only needs to trust ONE
+# SSL certificate (Flask's on port 8444). No second "trust this site" popup.
+
+NOVNC_PATH = None
+for _p in ["/usr/share/novnc", "/usr/share/novnc/web", "/opt/novnc"]:
+    if os.path.isdir(_p):
+        NOVNC_PATH = _p
+        break
+
+
+@app.route("/novnc/<path:filename>")
+def novnc_static(filename):
+    """Proxy noVNC static files through Flask so the browser trusts one cert."""
+    if not NOVNC_PATH:
+        return "noVNC not installed — run setup.sh", 503
+    safe = os.path.realpath(os.path.join(NOVNC_PATH, filename))
+    if not safe.startswith(os.path.realpath(NOVNC_PATH)):
+        return "Forbidden", 403
+    return send_from_directory(NOVNC_PATH, filename)
+
+
+@app.route("/novnc/")
+def novnc_index():
+    if not NOVNC_PATH:
+        return "noVNC not installed — run setup.sh", 503
+    return send_from_directory(NOVNC_PATH, "vnc.html")
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -286,7 +292,6 @@ def upload_iso():
     if ext not in ALLOWED_EXT:
         return jsonify({"error": f"File type '{ext}' not allowed. Use: {', '.join(ALLOWED_EXT)}"}), 400
 
-    # Give it a unique name to avoid collisions
     uid = uuid.uuid4().hex[:8]
     safe_name = f"{uid}_{filename}"
     dest = UPLOAD_FOLDER / safe_name
@@ -308,37 +313,28 @@ def launch_vm():
     storage  = int(data.get("storage", 20))
     extra    = data.get("extra_flags", "").strip()
 
-    # Validate arch
     if arch not in QEMU_BINS:
         return jsonify({"error": f"Unknown arch: {arch}"}), 400
 
-    # Validate memory
     memory = max(128, min(memory, MAX_MEMORY_MB))
-
-    # Validate storage
     storage = max(1, min(storage, MAX_STORAGE_GB))
 
-    # Validate ISO
     iso_path = UPLOAD_FOLDER / secure_filename(iso_name)
     if not iso_path.exists():
         return jsonify({"error": "ISO not found — please upload it first"}), 400
 
-    # Check QEMU binary exists
     qemu_bin = QEMU_BINS[arch]
     if not shutil_which(qemu_bin):
-        return jsonify({"error": f"QEMU binary '{qemu_bin}' not found on this system. Run setup.sh to install it."}), 500
+        return jsonify({"error": f"QEMU binary '{qemu_bin}' not found. Run setup.sh to install it."}), 500
 
-    # Sanitize extra flags
     is_safe, clean_flags, reason = sanitize_extra_flags(extra)
     if not is_safe:
         return jsonify({"error": f"Unsafe extra flags: {reason}"}), 400
 
-    # Create session
     session_id = uuid.uuid4().hex
     session_dir = SESSION_FOLDER / session_id
     session_dir.mkdir()
 
-    # Create disk image
     disk_path = str(session_dir / "disk.qcow2")
     result = subprocess.run(
         ["qemu-img", "create", "-f", "qcow2", disk_path, f"{storage}G"],
@@ -347,7 +343,6 @@ def launch_vm():
     if result.returncode != 0:
         return jsonify({"error": f"Failed to create disk image: {result.stderr}"}), 500
 
-    # Find free VNC port (atomically reserved)
     try:
         vnc_port = find_free_port()
         vnc_offset = vnc_port - 5900
@@ -355,13 +350,11 @@ def launch_vm():
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
 
-    # Build command
     config = {"arch": arch, "memory": memory, "extra_flags": clean_flags}
     cmd = build_qemu_command(config, str(iso_path), disk_path, vnc_offset)
 
     logger.info(f"[{session_id}] Launching: {' '.join(cmd)}")
 
-    # Launch QEMU
     try:
         proc = subprocess.Popen(
             cmd,
@@ -374,8 +367,6 @@ def launch_vm():
         release_ws_port(ws_port)
         return jsonify({"error": f"Failed to start QEMU: {e}"}), 500
 
-    # Brief check — if QEMU exits immediately, report the error
-    import time
     time.sleep(0.5)
     if proc.poll() is not None:
         stderr_out = proc.stderr.read().decode(errors="replace")
@@ -384,32 +375,27 @@ def launch_vm():
         logger.error(f"[{session_id}] QEMU failed immediately: {stderr_out}")
         return jsonify({"error": f"QEMU exited immediately: {stderr_out[:400]}"}), 500
 
-    # Launch websockify (VNC → WebSocket bridge)
+    # Launch websockify — plain ws:// (no SSL) because Flask owns the SSL layer.
+    # The browser connects to Flask over HTTPS/WSS and Flask's cert is already
+    # trusted, so websockify only needs to bridge localhost VNC → localhost WS.
     ws_proc = None
-    novnc_path = None
-    for p in ["/usr/share/novnc", "/usr/share/novnc/web", "/opt/novnc"]:
-        if os.path.isdir(p):
-            novnc_path = p
-            break
-
     websockify_bin = shutil_which("websockify")
-    if websockify_bin and novnc_path:
+    if websockify_bin:
         try:
-            ws_proc = subprocess.Popen([
+            ws_cmd = [
                 websockify_bin,
-                "--web", novnc_path,
-                "--cert", str(CERT_FILE),
-                "--key", str(KEY_FILE),
+                # NO --cert / --key: plain (unencrypted) websockify on localhost only
+                "--web", NOVNC_PATH or "/usr/share/novnc",
                 str(ws_port),
                 f"127.0.0.1:{vnc_port}"
-            ])
-            logger.info(f"[{session_id}] websockify started on port {ws_port} → VNC {vnc_port}")
+            ]
+            ws_proc = subprocess.Popen(ws_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logger.info(f"[{session_id}] websockify (plain) started on port {ws_port} → VNC {vnc_port}")
         except Exception as e:
             logger.warning(f"websockify failed to start: {e}")
     else:
-        logger.warning("websockify or noVNC not found — in-browser VNC unavailable. Run setup.sh.")
+        logger.warning("websockify not found — in-browser VNC unavailable. Run setup.sh.")
 
-    # Store session
     with sessions_lock:
         active_sessions[session_id] = {
             "process":    proc,
@@ -424,7 +410,6 @@ def launch_vm():
             "session_dir": str(session_dir),
         }
 
-    # Background thread to reap process
     threading.Thread(target=_watch_process, args=(session_id,), daemon=True).start()
 
     return jsonify({
@@ -441,16 +426,14 @@ def _watch_process(session_id: str):
         return
     proc = info["process"]
     proc.wait()
-    stderr_out = ""
     try:
         stderr_out = proc.stderr.read().decode(errors="replace")
+        if stderr_out:
+            logger.warning(f"[{session_id}] QEMU stderr: {stderr_out[:500]}")
     except Exception:
         pass
-    if stderr_out:
-        logger.warning(f"[{session_id}] QEMU stderr: {stderr_out[:500]}")
     logger.info(f"[{session_id}] QEMU process exited (code {proc.returncode})")
 
-    # Release ports
     vnc_port = info.get("vnc_port")
     ws_port  = info.get("ws_port")
     if vnc_port:
@@ -531,7 +514,6 @@ def validate_flags():
 
 @app.route("/api/system_info")
 def system_info():
-    """Return info about available QEMU binaries and features."""
     info = {}
     for arch, binary in QEMU_BINS.items():
         info[arch] = {
@@ -542,13 +524,8 @@ def system_info():
         "qemu": info,
         "kvm": is_kvm_available(),
         "websockify": bool(shutil_which("websockify")),
-        "novnc": any(os.path.isdir(p) for p in ["/usr/share/novnc", "/usr/share/novnc/web", "/opt/novnc"]),
+        "novnc": NOVNC_PATH is not None,
     })
-
-
-def shutil_which(name):
-    import shutil
-    return shutil.which(name)
 
 
 # ─── SocketIO events ──────────────────────────────────────────────────────────
@@ -568,85 +545,117 @@ def on_join(data):
 def on_leave(data):
     leave_room(data.get("session_id"))
 
-# ─────────────────────────────────────────────────────────────
-# CLEANUP TASKS
-# ─────────────────────────────────────────────────────────────
+
+# ─── Cleanup helpers ──────────────────────────────────────────────────────────
+
+def parse_iso(s: str) -> datetime:
+    try:
+        return datetime.fromisoformat(s)
+    except Exception:
+        return datetime.utcnow()
+
+
+def safe_unlink(path: Path):
+    try:
+        path.unlink()
+    except Exception:
+        pass
+
+
+def safe_rmtree(path: Path):
+    try:
+        shutil.rmtree(str(path))
+    except Exception:
+        pass
+
+
+def folder_size_bytes(folder: Path) -> int:
+    total = 0
+    for f in folder.rglob("*"):
+        if f.is_file():
+            try:
+                total += f.stat().st_size
+            except Exception:
+                pass
+    return total
+
+
+def terminate_session(sid: str, info: dict):
+    proc = info["process"]
+    ws_proc = info.get("ws_process")
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+    except Exception:
+        proc.terminate()
+    if ws_proc:
+        try:
+            ws_proc.terminate()
+        except Exception:
+            pass
+    vnc_port = info.get("vnc_port")
+    ws_port  = info.get("ws_port")
+    if vnc_port:
+        release_vnc_port(vnc_port)
+    if ws_port:
+        release_ws_port(ws_port)
+
 
 def cleanup_sessions():
     now = datetime.utcnow()
     expired = []
-
     with sessions_lock:
         for sid, info in list(active_sessions.items()):
             started = parse_iso(info.get("started", now.isoformat()))
             age = now - started
-
             proc = info["process"]
-
             if proc.poll() is not None:
                 expired.append(sid)
                 continue
-
             if age > timedelta(minutes=SESSION_TTL_MINUTES):
                 logger.info(f"[cleanup] Session expired: {sid}")
                 terminate_session(sid, info)
                 expired.append(sid)
-
         for sid in expired:
             active_sessions.pop(sid, None)
 
 
 def cleanup_uploads():
     now = datetime.utcnow()
-
     if not UPLOAD_FOLDER.exists():
         return
-
     for file in UPLOAD_FOLDER.iterdir():
         if not file.is_file():
             continue
-
         try:
             mtime = datetime.utcfromtimestamp(file.stat().st_mtime)
-            age = now - mtime
-
-            if age > timedelta(minutes=UPLOAD_TTL_MINUTES):
+            if (now - mtime) > timedelta(minutes=UPLOAD_TTL_MINUTES):
                 logger.info(f"[cleanup] Removing expired upload: {file.name}")
                 safe_unlink(file)
-
-        except:
+        except Exception:
             pass
 
 
 def enforce_upload_quota():
     max_bytes = UPLOAD_MAX_SIZE_GB * 1024 * 1024 * 1024
-    used = folder_size_bytes(UPLOAD_FOLDER)
-
-    if used > max_bytes:
+    if folder_size_bytes(UPLOAD_FOLDER) > max_bytes:
         logger.warning("[cleanup] Upload folder exceeded quota. Wiping uploads.")
-
-        for file in UPLOAD_FOLDER.iterdir():
-            if file.is_file():
-                safe_unlink(file)
-            elif file.is_dir():
-                safe_rmtree(file)
+        for f in UPLOAD_FOLDER.iterdir():
+            if f.is_file():
+                safe_unlink(f)
+            elif f.is_dir():
+                safe_rmtree(f)
 
 
 def cleanup_orphan_session_dirs():
     if not SESSION_FOLDER.exists():
         return
-
     with sessions_lock:
         live = set(active_sessions.keys())
-
     for folder in SESSION_FOLDER.iterdir():
         if folder.is_dir() and folder.name not in live:
             logger.info(f"[cleanup] Removing orphaned session dir: {folder.name}")
             safe_rmtree(folder)
 
-# ─────────────────────────────────────────────────────────────
-# BACKGROUND LOOP
-# ─────────────────────────────────────────────────────────────
 
 def cleanup_loop():
     while True:
@@ -657,7 +666,6 @@ def cleanup_loop():
             cleanup_orphan_session_dirs()
         except Exception as e:
             logger.error(f"[cleanup] {e}")
-
         time.sleep(CLEANUP_INTERVAL_SECONDS)
 
 
@@ -665,24 +673,23 @@ def start_cleanup_thread():
     t = threading.Thread(target=cleanup_loop, daemon=True)
     t.start()
 
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # Generate self-signed cert if needed
     cert_dir = Path("certs")
     cert_dir.mkdir(exist_ok=True)
 
-    if not CERT_FILE.exists() or not KEY_FILE.exists():a
-    logger.info("Generating self-signed certificate...")
-    subprocess.run([
-         "openssl", "req", "-x509", "-newkey", "rsa:4096",
-        "-keyout", str(KEY_FILE), "-out", str(CERT_FILE),
-        "-days", "3650", "-nodes",
-        "-subj", "/CN=qemu-frontend/O=Local/C=US"
-    ], check=True)
+    if not CERT_FILE.exists() or not KEY_FILE.exists():
+        logger.info("Generating self-signed certificate...")
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:4096",
+            "-keyout", str(KEY_FILE), "-out", str(CERT_FILE),
+            "-days", "3650", "-nodes",
+            "-subj", "/CN=qemu-frontend/O=Local/C=US"
+        ], check=True)
 
-    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    ssl_context.load_cert_chain(str(CERT_FILE), str(KEY_FILE))
+    start_cleanup_thread()
 
     logger.info("Starting QEMU Frontend on https://0.0.0.0:8444")
     socketio.run(
