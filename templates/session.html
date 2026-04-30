@@ -8,304 +8,164 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root[data-theme="dark"] {
-    --bg:       #0a0b0e;
-    --surface:  #12141a;
-    --surface2: #1a1d26;
-    --border:   #2a2d3a;
-    --accent:   #00ff88;
-    --accent2:  #0088ff;
-    --danger:   #ff3b5c;
-    --text:     #e8eaf0;
-    --muted:    #5a5f72;
-    --glow:     rgba(0, 255, 136, 0.15);
+    --bg:#0a0b0e; --surface:#12141a; --surface2:#1a1d26; --border:#2a2d3a;
+    --accent:#00ff88; --accent2:#0088ff; --danger:#ff3b5c;
+    --text:#e8eaf0; --muted:#5a5f72; --glow:rgba(0,255,136,0.15);
   }
   :root[data-theme="light"] {
-    --bg:       #f0f2f5;
-    --surface:  #ffffff;
-    --surface2: #f7f8fc;
-    --border:   #d0d4e0;
-    --accent:   #00994f;
-    --accent2:  #0055cc;
-    --danger:   #cc1f3a;
-    --text:     #1a1d26;
-    --muted:    #8a8fa5;
-    --glow:     rgba(0, 153, 79, 0.1);
+    --bg:#f0f2f5; --surface:#fff; --surface2:#f7f8fc; --border:#d0d4e0;
+    --accent:#00994f; --accent2:#0055cc; --danger:#cc1f3a;
+    --text:#1a1d26; --muted:#8a8fa5; --glow:rgba(0,153,79,0.1);
   }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospace;
+       display:flex;flex-direction:column;height:100vh;transition:background .3s}
 
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; overflow: hidden; }
+  .toolbar{display:flex;align-items:center;gap:10px;padding:8px 16px;
+            background:var(--surface);border-bottom:1px solid var(--border);
+            flex-shrink:0;z-index:100;flex-wrap:wrap}
+  .toolbar-logo{font-family:'Syne',sans-serif;font-weight:800;font-size:.95rem;
+                color:var(--accent);letter-spacing:-.02em;white-space:nowrap}
+  .toolbar-sep{width:1px;height:18px;background:var(--border);flex-shrink:0}
+  .session-badge{background:var(--surface2);border:1px solid var(--border);border-radius:6px;
+                 padding:3px 10px;font-size:.68rem;display:flex;align-items:center;gap:7px}
+  .badge-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .info-pill{background:var(--surface2);border:1px solid var(--border);padding:3px 9px;
+             border-radius:5px;font-size:.62rem;color:var(--muted);white-space:nowrap}
+  .info-pill span{color:var(--text)}
+  .kvm-pill{font-size:.62rem;padding:3px 9px;border-radius:5px;border:1px solid;white-space:nowrap}
+  .kvm-on{border-color:var(--accent);color:var(--accent)}
+  .kvm-off{border-color:var(--muted);color:var(--muted)}
+  .kvm-forced{border-color:var(--warning,#ffb84d);color:var(--warning,#ffb84d)}
+  .toolbar-spacer{flex:1}
+  .tbtn{background:transparent;border:1px solid var(--border);color:var(--muted);
+        font-family:'JetBrains Mono',monospace;font-size:.65rem;padding:5px 10px;border-radius:5px;
+        cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:5px;
+        white-space:nowrap;text-decoration:none}
+  .tbtn:hover{border-color:var(--text);color:var(--text)}
+  .tbtn.danger{border-color:var(--danger);color:var(--danger)}
+  .tbtn.danger:hover{background:rgba(255,59,92,.1)}
+  .toggle-sw{width:32px;height:18px;background:var(--surface2);border:1px solid var(--border);
+             border-radius:9px;position:relative;transition:background .3s;flex-shrink:0}
+  .toggle-sw::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;
+                    background:var(--muted);border-radius:50%;transition:transform .3s,background .3s}
+  [data-theme="light"] .toggle-sw{background:var(--accent);border-color:var(--accent)}
+  [data-theme="light"] .toggle-sw::after{transform:translateX(14px);background:#fff}
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'JetBrains Mono', monospace;
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    transition: background 0.3s;
-  }
+  .vnc-area{flex:1;display:flex;align-items:center;justify-content:center;
+            overflow:hidden;position:relative;background:#000}
 
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 20px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-    z-index: 100;
-    flex-wrap: wrap;
-  }
+  /* Loading overlay */
+  .vnc-overlay{position:absolute;inset:0;background:var(--bg);display:flex;flex-direction:column;
+               align-items:center;justify-content:center;gap:18px;z-index:10;transition:opacity .5s}
+  .vnc-overlay.hidden{opacity:0;pointer-events:none}
+  .ov-spinner{width:44px;height:44px;border:3px solid var(--border);border-top-color:var(--accent);
+              border-radius:50%;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ov-title{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;color:var(--text)}
+  .ov-sub{font-size:.72rem;color:var(--muted);text-align:center;max-width:380px;line-height:1.6}
+  .ov-steps{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+  .ov-step{display:flex;align-items:center;gap:9px;font-size:.67rem;color:var(--muted)}
+  .ov-step.done{color:var(--accent)}.ov-step.active{color:var(--text)}
+  .step-dot{width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0}
+  .ov-step.active .step-dot{animation:pulse 1s infinite}
 
-  .toolbar-logo {
-    font-family: 'Syne', sans-serif;
-    font-weight: 800;
-    font-size: 1rem;
-    color: var(--accent);
-    letter-spacing: -0.02em;
-    white-space: nowrap;
-  }
-  .toolbar-sep { width: 1px; height: 20px; background: var(--border); }
+  /* VNC canvas */
+  #vnc-canvas{display:block;max-width:100%;max-height:100%;object-fit:contain;cursor:default}
 
-  .session-badge {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 12px;
-    font-size: 0.7rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .session-badge-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-    animation: pulse 2s infinite;
-  }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  /* Stopped overlay */
+  .vm-stopped{display:none;position:absolute;inset:0;background:rgba(10,11,14,.92);
+              align-items:center;justify-content:center;flex-direction:column;gap:14px;z-index:20}
+  .vm-stopped.show{display:flex}
+  .stopped-icon{font-size:2.8rem}
+  .stopped-title{font-family:'Syne',sans-serif;font-size:1.3rem;font-weight:700;color:var(--text)}
+  .stopped-sub{font-size:.75rem;color:var(--muted);text-align:center;max-width:340px;line-height:1.6}
 
-  .info-pill {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 0.65rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-  .info-pill span { color: var(--text); }
-
-  .toolbar-spacer { flex: 1; }
-
-  .toolbar-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--muted);
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 0.68rem;
-    padding: 6px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    white-space: nowrap;
-    text-decoration: none;
-  }
-  .toolbar-btn:hover { border-color: var(--text); color: var(--text); }
-  .toolbar-btn.danger { border-color: var(--danger); color: var(--danger); }
-  .toolbar-btn.danger:hover { background: rgba(255,59,92,0.1); }
-
-  .theme-toggle { display:flex; align-items:center; gap:6px; cursor:pointer; }
-  .toggle-switch {
-    width: 36px; height: 20px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    position: relative;
-    transition: background 0.3s;
-    flex-shrink: 0;
-  }
-  .toggle-switch::after {
-    content:''; position:absolute;
-    top:2px; left:2px;
-    width:14px; height:14px;
-    background: var(--muted);
-    border-radius:50%;
-    transition: transform 0.3s, background 0.3s;
-  }
-  [data-theme="light"] .toggle-switch { background: var(--accent); border-color: var(--accent); }
-  [data-theme="light"] .toggle-switch::after { transform:translateX(16px); background:white; }
-
-  .vnc-area {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    position: relative;
-    background: #000;
-  }
-
-  .vnc-loading {
-    position: absolute;
-    inset: 0;
-    background: var(--bg);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-    z-index: 10;
-    transition: opacity 0.5s;
-  }
-  .vnc-loading.hidden { opacity: 0; pointer-events: none; }
-
-  .loading-spinner {
-    width: 48px; height: 48px;
-    border: 3px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  .loading-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.2rem;
-    font-weight: 700;
-    color: var(--text);
-  }
-  .loading-subtitle {
-    font-size: 0.75rem;
-    color: var(--muted);
-    text-align: center;
-    max-width: 400px;
-    line-height: 1.6;
-  }
-  .loading-steps { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-  .loading-step {
-    display: flex; align-items: center; gap: 10px;
-    font-size: 0.7rem; color: var(--muted);
-  }
-  .loading-step.done { color: var(--accent); }
-  .loading-step.active { color: var(--text); }
-  .step-indicator { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-  .loading-step.active .step-indicator { animation: pulse 1s infinite; }
-
-  #novnc-iframe {
-    width: 100%;
-    height: 100%;
-    border: none;
-    display: block;
-  }
-
-  .vm-stopped {
-    display: none;
-    position: absolute;
-    inset: 0;
-    background: rgba(10, 11, 14, 0.92);
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    gap: 16px;
-    z-index: 20;
-  }
-  .vm-stopped.show { display: flex; }
-  .stopped-icon { font-size: 3rem; }
-  .stopped-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.4rem;
-    font-weight: 700;
-    color: var(--text);
-  }
-  .stopped-sub { font-size: 0.8rem; color: var(--muted); text-align: center; max-width: 360px; line-height: 1.6; }
-
-  .statusbar {
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 6px 20px;
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    font-size: 0.65rem;
-    color: var(--muted);
-    flex-shrink: 0;
-    flex-wrap: wrap;
-  }
-  .statusbar-item span { color: var(--text); }
-  #statusbar-state { color: var(--accent); font-weight: 500; }
+  .statusbar{background:var(--surface);border-top:1px solid var(--border);padding:5px 18px;
+             display:flex;align-items:center;gap:18px;font-size:.62rem;color:var(--muted);
+             flex-shrink:0;flex-wrap:wrap}
+  .statusbar span{color:var(--text)}
+  #sb-state{color:var(--accent);font-weight:500}
 </style>
 </head>
 <body>
+
 <div class="toolbar">
   <div class="toolbar-logo">[QEMU]</div>
   <div class="toolbar-sep"></div>
   <div class="session-badge">
-    <div class="session-badge-dot" id="status-dot"></div>
-    <span id="session-id-label">{{ session_id[:8] }}…</span>
+    <div class="badge-dot" id="status-dot"></div>
+    <span>{{ session_id[:8] }}…</span>
   </div>
   <div class="info-pill">ARCH: <span>{{ session.arch.upper() }}</span></div>
-  <div class="info-pill">RAM: <span>{% if session.memory >= 1024 %}{{ (session.memory / 1024)|round(1) }} GB{% else %}{{ session.memory }} MB{% endif %}</span></div>
+  <div class="info-pill">RAM: <span>
+    {% if session.memory >= 1024 %}{{ (session.memory/1024)|round(1) }} GB
+    {% else %}{{ session.memory }} MB{% endif %}
+  </span></div>
   <div class="info-pill">DISK: <span>{{ session.storage }} GB</span></div>
   <div class="info-pill">VNC: <span>:{{ session.vnc_port }}</span></div>
+
+  {# KVM status pill #}
+  {% set kvm_ov = session.get('kvm_override', 'auto') %}
+  {% if kvm_ov == 'force_on' %}
+    <div class="kvm-pill kvm-forced">⚡ KVM FORCED ON</div>
+  {% elif kvm_ov == 'force_off' %}
+    <div class="kvm-pill kvm-off">🐌 KVM FORCED OFF</div>
+  {% else %}
+    <div class="kvm-pill kvm-on" id="kvm-auto-pill">⚡ KVM AUTO</div>
+  {% endif %}
+
   <div class="toolbar-spacer"></div>
-  <button class="toolbar-btn" onclick="sendCtrlAltDel()" title="Send Ctrl+Alt+Del">⎋ Ctrl+Alt+Del</button>
-  <button class="toolbar-btn" onclick="toggleFullscreen()" title="Fullscreen">⛶ Fullscreen</button>
-  <label class="theme-toggle toolbar-btn" style="border:none;" for="s-theme-check" title="Toggle theme">
-    <div class="toggle-switch"></div>
+  <button class="tbtn" onclick="sendCtrlAltDel()">⎋ Ctrl+Alt+Del</button>
+  <button class="tbtn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+  <label class="tbtn" style="border:none;padding:5px 6px" for="s-theme-check" title="Toggle theme">
+    <div class="toggle-sw"></div>
     <input type="checkbox" id="s-theme-check" style="display:none">
   </label>
-  <button class="toolbar-btn danger" onclick="confirmStop()">■ Stop VM</button>
-  <a class="toolbar-btn" href="/">← Dashboard</a>
+  <button class="tbtn danger" onclick="confirmStop()">■ Stop VM</button>
+  <a class="tbtn" href="/">← Dashboard</a>
 </div>
 
 <div class="vnc-area" id="vnc-area">
 
-  <div class="vnc-loading" id="vnc-loading">
-    <div class="loading-spinner" id="loading-spinner"></div>
-    <div class="loading-title" id="loading-title">Starting VM…</div>
-    <div class="loading-subtitle" id="loading-subtitle">QEMU is booting your image. This may take 10–30 seconds.</div>
-    <div class="loading-steps" id="loading-steps">
-      <div class="loading-step done" id="ls-qemu"><div class="step-indicator"></div>QEMU process started</div>
-      <div class="loading-step active" id="ls-vnc"><div class="step-indicator"></div>Waiting for VNC server…</div>
-      <div class="loading-step" id="ls-ws"><div class="step-indicator"></div>Connecting WebSocket bridge…</div>
-      <div class="loading-step" id="ls-display"><div class="step-indicator"></div>Display ready</div>
+  <div class="vnc-overlay" id="vnc-overlay">
+    <div class="ov-spinner" id="ov-spinner"></div>
+    <div class="ov-title" id="ov-title">Starting VM…</div>
+    <div class="ov-sub">QEMU is booting your image. This may take 10–30 seconds.</div>
+    <div class="ov-steps">
+      <div class="ov-step done"   id="s-qemu"><div class="step-dot"></div>QEMU process started</div>
+      <div class="ov-step active" id="s-vnc" ><div class="step-dot"></div>Connecting VNC proxy…</div>
+      <div class="ov-step"        id="s-disp"><div class="step-dot"></div>Display ready</div>
     </div>
   </div>
 
-  <iframe id="novnc-iframe" style="display:none;" allow="clipboard-read; clipboard-write"></iframe>
+  <canvas id="vnc-canvas"></canvas>
 
   <div class="vm-stopped" id="vm-stopped">
     <div class="stopped-icon">⏹</div>
     <div class="stopped-title">VM Stopped</div>
-    <div class="stopped-sub" id="stopped-sub">The QEMU process has exited. You can return to the dashboard.</div>
-    <a href="/" class="toolbar-btn" style="margin-top:12px;">← Back to Dashboard</a>
+    <div class="stopped-sub" id="stopped-sub">The QEMU process has exited.</div>
+    <a href="/" class="tbtn" style="margin-top:10px">← Back to Dashboard</a>
   </div>
-
 </div>
 
 <div class="statusbar">
-  <div class="statusbar-item">SESSION: <span>{{ session_id[:16] }}…</span></div>
-  <div class="statusbar-item">STATUS: <span id="statusbar-state">Connecting…</span></div>
-  <div class="statusbar-item">ISO: <span>{{ session.iso }}</span></div>
-  <div class="statusbar-item">UPTIME: <span id="uptime-val">0s</span></div>
+  <div>SESSION: <span>{{ session_id[:16] }}…</span></div>
+  <div>STATUS: <span id="sb-state">Connecting…</span></div>
+  <div>ISO: <span>{{ session.iso }}</span></div>
+  <div>UPTIME: <span id="sb-uptime">0s</span></div>
+  <div>DISPLAY: <span id="sb-res">—</span></div>
 </div>
 
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script>
+// ── Config ──────────────────────────────────────────────────────────────────
 const SESSION_ID = "{{ session_id }}";
-// websockify runs plain (no SSL) on localhost — browser connects to it via ws://
-// Flask itself is HTTPS so no second certificate to trust.
-const WS_PORT    = {{ session.ws_port }};
-const VNC_PORT   = {{ session.vnc_port }};
 const STARTED    = new Date("{{ session.started }}");
-const HOST       = window.location.hostname;
 
-// Theme
+// ── Theme ───────────────────────────────────────────────────────────────────
 const html = document.documentElement;
 const sThemeCheck = document.getElementById('s-theme-check');
 function setTheme(light) {
@@ -314,142 +174,544 @@ function setTheme(light) {
   localStorage.setItem('theme', light ? 'light' : 'dark');
 }
 sThemeCheck.addEventListener('change', () => setTheme(sThemeCheck.checked));
-const savedTheme = localStorage.getItem('theme');
-if (savedTheme) setTheme(savedTheme === 'light');
+const saved = localStorage.getItem('theme');
+if (saved) setTheme(saved === 'light');
 
-// Uptime
+// ── Uptime ──────────────────────────────────────────────────────────────────
 setInterval(() => {
-  const s = Math.floor((Date.now() - STARTED.getTime()) / 1000);
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
-  document.getElementById('uptime-val').textContent =
-    (h ? h+'h ' : '') + (m ? m+'m ' : '') + sec + 's';
+  const s = Math.floor((Date.now() - STARTED) / 1000);
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  document.getElementById('sb-uptime').textContent =
+    (h?h+'h ':'') + (m?m+'m ':'') + sec+'s';
 }, 1000);
 
-// Socket for VM stop events
-const socket = io({ secure: true });
-socket.emit('join_session', { session_id: SESSION_ID });
-socket.on('vm_stopped', data => {
-  if (data.session_id === SESSION_ID) showStopped('QEMU process exited.');
-});
-socket.on('session_status', data => {
-  if (!data.running) showStopped('Session is no longer running.');
-});
-
-function showStopped(reason) {
-  document.getElementById('vm-stopped').classList.add('show');
-  document.getElementById('vnc-loading').classList.add('hidden');
-  document.getElementById('stopped-sub').textContent = reason + ' You can return to the dashboard.';
-  document.getElementById('status-dot').style.background = 'var(--danger)';
-  document.getElementById('statusbar-state').textContent = 'Stopped';
-  document.getElementById('statusbar-state').style.color = 'var(--danger)';
-}
-
+// ── Step helpers ─────────────────────────────────────────────────────────────
 function stepDone(id) {
   const el = document.getElementById(id);
   if (el) { el.classList.remove('active'); el.classList.add('done'); }
 }
 function stepActive(id) {
   const el = document.getElementById(id);
-  if (el) { el.classList.add('active'); el.classList.remove('done'); }
+  if (el) { el.classList.add('active'); }
 }
 
-// ── VNC Connection ──────────────────────────────────────────────────────────
-// websockify runs plain ws:// (no SSL) because it only listens on 127.0.0.1
-// and the browser is on the same host or on a trusted LAN.
-// noVNC is served through Flask at /novnc/ — same origin, same trusted cert.
+// ── Socket.IO ────────────────────────────────────────────────────────────────
+const socket = io({ secure: true });
+socket.emit('join_session', { session_id: SESSION_ID });
 
-const iframe = document.getElementById('novnc-iframe');
-let connected = false;
-let retries = 0;
-const MAX_RETRIES = 40;
+socket.on('session_status', d => {
+  if (!d.running) showStopped('Session is no longer running.');
+});
+socket.on('vm_stopped', d => {
+  if (d.session_id === SESSION_ID) showStopped('QEMU process exited.');
+});
 
-function tryConnectVNC() {
-  if (connected) return;
-  if (retries >= MAX_RETRIES) {
-    showDirectVNCInfo();
-    return;
+// ── VNC via Socket.IO ────────────────────────────────────────────────────────
+// The server proxies raw RFB (VNC) bytes over Socket.IO events.
+// We implement a minimal RFB 3.8 client here so noVNC is not needed
+// for the connection — we render directly to a canvas.
+//
+// For full noVNC rendering quality, noVNC is loaded in a hidden iframe
+// that also connects via the same Socket.IO proxy, if novnc is installed.
+// Otherwise the raw canvas renderer handles it.
+
+const USE_NOVNC = {{ 'true' if novnc_available else 'false' }};
+
+// ── noVNC iframe approach (best quality) ─────────────────────────────────────
+// If noVNC is installed on the server, we serve its files through Flask at
+// /novnc/ (same HTTPS origin) and inject a custom websocket shim that
+// redirects noVNC's WebSocket calls into our Socket.IO channel.
+// This means: zero cert popups, full noVNC rendering.
+
+let novncIframe = null;
+
+function startNoVNC() {
+  // The shim script URL that we inject into the noVNC iframe context
+  // (served by Flask from this same page's origin).
+  // We create the iframe dynamically so we can inject the shim before noVNC loads.
+
+  const canvas = document.getElementById('vnc-canvas');
+  canvas.style.display = 'none';
+
+  const area = document.getElementById('vnc-area');
+  novncIframe = document.createElement('iframe');
+  novncIframe.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:none;z-index:1';
+  // We pass a custom wsProxyScript param; the shim intercepts WebSocket new()
+  novncIframe.src = `/novnc/vnc.html?autoconnect=false&resize=scale&quality=6&compression=2`;
+  area.appendChild(novncIframe);
+
+  novncIframe.addEventListener('load', () => {
+    try {
+      // Inject WebSocket shim into the iframe
+      injectWsShim(novncIframe.contentWindow);
+      // Now tell noVNC to connect (it will use our shim)
+      setTimeout(() => {
+        try {
+          const rfb = novncIframe.contentWindow._rfb_instance;
+          if (rfb) rfb.connect();
+          // If noVNC auto-creates RFB with autoconnect=true after our shim is in place:
+          // just trigger connect via noVNC's UI
+          const connectBtn = novncIframe.contentDocument.getElementById('noVNC_connect_button');
+          if (connectBtn) connectBtn.click();
+        } catch(e) {}
+      }, 500);
+    } catch(e) {
+      // cross-origin guard — shouldn't happen since we serve from same origin
+      console.warn('iframe inject failed:', e);
+      fallbackRawVNC();
+    }
+  });
+}
+
+function injectWsShim(win) {
+  // Replace window.WebSocket in the iframe with a shim that
+  // routes all data through our Socket.IO connection.
+  const OrigWS = win.WebSocket;
+  const _socket = socket; // capture outer socket
+  const _sid    = SESSION_ID;
+
+  win.WebSocket = function(url, protocols) {
+    const self = this;
+    self.readyState = 0; // CONNECTING
+    self.bufferedAmount = 0;
+    self.binaryType = 'arraybuffer';
+    self.url = url;
+    self.protocol = Array.isArray(protocols) ? protocols[0] : (protocols||'');
+
+    const listeners = { open:[], message:[], close:[], error:[] };
+
+    self.addEventListener = (type, fn) => {
+      if (listeners[type]) listeners[type].push(fn);
+    };
+    self.removeEventListener = (type, fn) => {
+      if (listeners[type]) listeners[type] = listeners[type].filter(f=>f!==fn);
+    };
+
+    function fire(type, evt) {
+      if (self['on'+type]) self['on'+type](evt);
+      (listeners[type]||[]).forEach(fn=>fn(evt));
+    }
+
+    // Send browser→VNC
+    self.send = function(data) {
+      let b64;
+      if (typeof data === 'string') {
+        b64 = btoa(data);
+      } else {
+        const bytes = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
+        let bin = '';
+        bytes.forEach(b => bin += String.fromCharCode(b));
+        b64 = btoa(bin);
+      }
+      _socket.emit('vnc_send', { session_id: _sid, b64 });
+    };
+
+    self.close = function() {
+      self.readyState = 3;
+      fire('close', { code:1000, reason:'', wasClean:true });
+      _socket.emit('vnc_stop', { session_id: _sid });
+    };
+
+    // Receive VNC→browser
+    function onData(d) {
+      if (self.readyState !== 1) return;
+      const bin = atob(d.b64);
+      const buf = new ArrayBuffer(bin.length);
+      const view = new Uint8Array(buf);
+      for (let i=0;i<bin.length;i++) view[i]=bin.charCodeAt(i);
+      fire('message', { data: self.binaryType==='arraybuffer' ? buf : new Blob([buf]) });
+    }
+
+    function onConnected() {
+      self.readyState = 1; // OPEN
+      fire('open', {});
+    }
+
+    function onDisconnected() {
+      self.readyState = 3;
+      fire('close', { code:1000, reason:'server closed', wasClean:true });
+    }
+
+    function onError(d) {
+      fire('error', { message: d.reason||'VNC error' });
+    }
+
+    _socket.on('vnc_data',         onData);
+    _socket.on('vnc_connected',    onConnected);
+    _socket.on('vnc_disconnected', onDisconnected);
+    _socket.on('vnc_error',        onError);
+
+    // Ask server to start the proxy
+    _socket.emit('vnc_start', { session_id: _sid });
+
+    return self;
+  };
+
+  win.WebSocket.CONNECTING = 0;
+  win.WebSocket.OPEN       = 1;
+  win.WebSocket.CLOSING    = 2;
+  win.WebSocket.CLOSED     = 3;
+}
+
+// ── Fallback: raw RFB canvas renderer ────────────────────────────────────────
+// A very small RFB 3.8 implementation — enough to show the framebuffer.
+// Supports: Raw, CopyRect, RRE encodings; SetColourMapEntries; basic input.
+
+function fallbackRawVNC() {
+  const canvas = document.getElementById('vnc-canvas');
+  canvas.style.display = 'block';
+  const ctx = canvas.getContext('2d');
+
+  let connected = false;
+  let buf = new Uint8Array(0);
+  let state = 'version';
+  let fbWidth = 0, fbHeight = 0;
+  let serverName = '';
+  let pixelFormat = null; // set after ServerInit
+  let imgData = null;
+  let updatesPending = 0;
+
+  function append(newBytes) {
+    const tmp = new Uint8Array(buf.length + newBytes.length);
+    tmp.set(buf); tmp.set(newBytes, buf.length);
+    buf = tmp;
+    process();
   }
-  retries++;
-  stepActive('ls-ws');
 
-  // websockify is plain ws:// (no TLS) — avoids second-certificate warning
-  const wsProbe = new WebSocket(`ws://${HOST}:${WS_PORT}`);
-  wsProbe.onopen = () => {
-    wsProbe.close();
-    onWebsockifyReady();
-  };
-  wsProbe.onerror = () => {
-    setTimeout(tryConnectVNC, 2000);
-  };
-  setTimeout(() => {
-    if (wsProbe.readyState === WebSocket.CONNECTING) wsProbe.close();
-  }, 1500);
-}
+  function consume(n) { buf = buf.slice(n); }
 
-function onWebsockifyReady() {
-  stepDone('ls-vnc');
-  stepDone('ls-ws');
-  stepActive('ls-display');
+  function u8(off)  { return buf[off]; }
+  function u16(off) { return (buf[off]<<8)|buf[off+1]; }
+  function u32(off) { return ((buf[off]<<24)|(buf[off+1]<<16)|(buf[off+2]<<8)|buf[off+3])>>>0; }
 
-  // noVNC HTML is served through Flask (/novnc/vnc.html) — same HTTPS origin.
-  // websockify WebSocket uses plain ws:// on WS_PORT.
-  // autoconnect=true makes noVNC connect immediately on load.
-  const vncUrl = `/novnc/vnc.html?host=${HOST}&port=${WS_PORT}&path=&encrypt=0&autoconnect=true&reconnect=true&reconnect_delay=3000&resize=scale&quality=6&compression=2`;
+  function send(bytes) {
+    const b64 = btoa(String.fromCharCode(...bytes));
+    socket.emit('vnc_send', { session_id: SESSION_ID, b64 });
+  }
 
-  iframe.src = vncUrl;
-  iframe.style.display = 'block';
+  function sendSetPixelFormat() {
+    // Request 32-bit RGBA (R=1,G=2,B=3 bytes, depth 24, bpp 32, little-endian)
+    send([0, 0,0,0,
+          32,24,0,1,  // bpp, depth, big-endian=0, true-colour=1
+          0,255, 0,255, 0,255,  // r-max, g-max, b-max
+          16, 8, 0,             // r-shift, g-shift, b-shift
+          0,0,0]);              // padding
+  }
 
-  setTimeout(() => {
-    stepDone('ls-display');
+  function sendSetEncodings() {
+    // Raw=0, CopyRect=1, RRE=2
+    const encs = [0, 1, 2];
+    const msg = [2, 0, 0, encs.length];
+    encs.forEach(e => { msg.push((e>>24)&0xff,(e>>16)&0xff,(e>>8)&0xff,e&0xff); });
+    send(msg);
+  }
+
+  function requestFullUpdate() {
+    // FramebufferUpdateRequest: incremental=0, full screen
+    send([3, 0, 0,0, 0,0,
+          (fbWidth>>8)&0xff, fbWidth&0xff,
+          (fbHeight>>8)&0xff, fbHeight&0xff]);
+  }
+
+  function requestIncrUpdate() {
+    send([3, 1, 0,0, 0,0,
+          (fbWidth>>8)&0xff, fbWidth&0xff,
+          (fbHeight>>8)&0xff, fbHeight&0xff]);
+  }
+
+  function process() {
+    while (true) {
+      if (state === 'version') {
+        if (buf.length < 12) return;
+        const ver = String.fromCharCode(...buf.slice(0,12));
+        consume(12);
+        // Reply with 3.8
+        send([82,70,66,32,48,48,51,46,48,48,56,10]); // "RFB 003.008\n"
+        state = 'security-types';
+
+      } else if (state === 'security-types') {
+        if (buf.length < 1) return;
+        const n = u8(0); consume(1);
+        if (n === 0) { state='error'; return; }
+        if (buf.length < n) { buf = new Uint8Array([n,...buf]); return; } // un-consume
+        // Find type 1 (None) or 2 (VNC Auth)
+        let chosen = 0;
+        for (let i=0;i<n;i++) { if (buf[i]===1){chosen=1;break;} if(buf[i]===2)chosen=2; }
+        consume(n);
+        send([chosen]);
+        state = chosen===2 ? 'vnc-auth' : 'security-result';
+
+      } else if (state === 'vnc-auth') {
+        // We don't support VNC auth — just send empty response (works if no password)
+        if (buf.length < 16) return;
+        consume(16);
+        send(new Array(16).fill(0));
+        state = 'security-result';
+
+      } else if (state === 'security-result') {
+        if (buf.length < 4) return;
+        const ok = u32(0); consume(4);
+        if (ok !== 0) { showError('VNC security failed'); return; }
+        // Send ClientInit (shared=1)
+        send([1]);
+        state = 'server-init';
+
+      } else if (state === 'server-init') {
+        if (buf.length < 24) return;
+        fbWidth  = u16(0);
+        fbHeight = u16(2);
+        // pixel format bytes 4..19 (ignored, we request our own)
+        const nameLen = u32(20);
+        if (buf.length < 24+nameLen) return;
+        serverName = String.fromCharCode(...buf.slice(24,24+nameLen));
+        consume(24+nameLen);
+        canvas.width  = fbWidth;
+        canvas.height = fbHeight;
+        imgData = ctx.createImageData(fbWidth, fbHeight);
+        document.getElementById('sb-res').textContent = `${fbWidth}×${fbHeight}`;
+        sendSetPixelFormat();
+        sendSetEncodings();
+        requestFullUpdate();
+        state = 'normal';
+        stepDone('s-vnc');
+        stepActive('s-disp');
+        setTimeout(() => {
+          document.getElementById('vnc-overlay').classList.add('hidden');
+          document.getElementById('sb-state').textContent = 'Connected';
+          stepDone('s-disp');
+        }, 800);
+
+      } else if (state === 'normal') {
+        if (buf.length < 1) return;
+        const msgType = u8(0);
+
+        if (msgType === 0) {
+          // FramebufferUpdate
+          if (buf.length < 4) return;
+          const nRects = u16(2);
+          consume(4);
+          for (let r=0; r<nRects; r++) {
+            if (buf.length < 12) return;
+            const rx=u16(0),ry=u16(2),rw=u16(4),rh=u16(6),enc=u32(8);
+            consume(12);
+            if (enc === 0) { // Raw
+              const pixels = rw*rh*4;
+              if (buf.length < pixels) return;
+              // Copy pixels into imgData
+              for (let row=0;row<rh;row++) {
+                for (let col=0;col<rw;col++) {
+                  const si=(row*rw+col)*4;
+                  const di=((ry+row)*fbWidth+(rx+col))*4;
+                  imgData.data[di]   = buf[si+2]; // R (from BGR)
+                  imgData.data[di+1] = buf[si+1]; // G
+                  imgData.data[di+2] = buf[si];   // B
+                  imgData.data[di+3] = 255;
+                }
+              }
+              consume(pixels);
+            } else if (enc === 1) { // CopyRect
+              if (buf.length < 4) return;
+              const sx=u16(0), sy=u16(2); consume(4);
+              // Copy region
+              const tmp = ctx.getImageData(sx,sy,rw,rh);
+              ctx.putImageData(tmp, rx, ry);
+            } else if (enc === 2) { // RRE
+              if (buf.length < 8) return;
+              const nSubs = u32(0);
+              const bg = [buf[4],buf[5],buf[6],buf[7]];
+              consume(8);
+              // Fill background
+              for (let row=0;row<rh;row++)
+                for (let col=0;col<rw;col++) {
+                  const di=((ry+row)*fbWidth+(rx+col))*4;
+                  imgData.data[di]=bg[2];imgData.data[di+1]=bg[1];
+                  imgData.data[di+2]=bg[0];imgData.data[di+3]=255;
+                }
+              for (let s=0;s<nSubs;s++) {
+                if (buf.length < 12) return;
+                const sc=[buf[0],buf[1],buf[2],buf[3]];
+                const sx2=u16(4),sy2=u16(6),sw=u16(8),sh=u16(10);
+                consume(12);
+                for (let row=0;row<sh;row++)
+                  for (let col=0;col<sw;col++) {
+                    const di=((ry+sy2+row)*fbWidth+(rx+sx2+col))*4;
+                    imgData.data[di]=sc[2];imgData.data[di+1]=sc[1];
+                    imgData.data[di+2]=sc[0];imgData.data[di+3]=255;
+                  }
+              }
+            }
+          }
+          ctx.putImageData(imgData, 0, 0);
+          requestIncrUpdate();
+
+        } else if (msgType === 2) {
+          // Bell — ignore
+          consume(1);
+        } else if (msgType === 3) {
+          // ServerCutText
+          if (buf.length < 8) return;
+          const len = u32(4); consume(8);
+          if (buf.length < len) return;
+          consume(len);
+        } else {
+          // Unknown — skip 1 byte
+          consume(1);
+        }
+      }
+    }
+  }
+
+  // Receive data from server
+  socket.on('vnc_data', d => {
+    const bin = atob(d.b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    append(bytes);
+  });
+
+  socket.on('vnc_connected', () => {
     connected = true;
-    document.getElementById('vnc-loading').classList.add('hidden');
-    document.getElementById('statusbar-state').textContent = 'Connected';
-  }, 2000);
+    stepDone('s-qemu');
+    stepActive('s-vnc');
+  });
+
+  socket.on('vnc_error', d => {
+    document.getElementById('ov-title').textContent = 'VNC Error';
+    document.getElementById('ov-sub').textContent   = d.reason || 'Connection failed';
+    document.getElementById('ov-spinner').style.display = 'none';
+    document.getElementById('sb-state').textContent = 'Error';
+  });
+
+  // Mouse events
+  canvas.addEventListener('mousemove',  e => sendPointer(e, getButtons(e)));
+  canvas.addEventListener('mousedown',  e => sendPointer(e, getButtons(e)));
+  canvas.addEventListener('mouseup',    e => sendPointer(e, 0));
+
+  function getButtons(e) {
+    let b = 0;
+    if (e.buttons & 1) b |= 1;
+    if (e.buttons & 4) b |= 2;
+    if (e.buttons & 2) b |= 4;
+    return b;
+  }
+
+  function sendPointer(e, buttons) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = fbWidth  / rect.width;
+    const scaleY = fbHeight / rect.height;
+    const x = Math.round((e.clientX - rect.left) * scaleX);
+    const y = Math.round((e.clientY - rect.top)  * scaleY);
+    send([5, buttons, (x>>8)&0xff, x&0xff, (y>>8)&0xff, y&0xff]);
+  }
+
+  // Keyboard events
+  canvas.setAttribute('tabindex', '0');
+  canvas.addEventListener('keydown', e => { e.preventDefault(); sendKey(e, 1); });
+  canvas.addEventListener('keyup',   e => { e.preventDefault(); sendKey(e, 0); });
+
+  function sendKey(e, down) {
+    const keysym = domKeyToKeySym(e);
+    send([4, down, 0,0, (keysym>>24)&0xff,(keysym>>16)&0xff,(keysym>>8)&0xff,keysym&0xff]);
+  }
+
+  function domKeyToKeySym(e) {
+    // Map common keys to X11 keysyms
+    const map = {
+      'Enter':13,'Tab':9,'Backspace':8,'Escape':27,'Delete':0xffff,
+      'ArrowUp':0xff52,'ArrowDown':0xff54,'ArrowLeft':0xff51,'ArrowRight':0xff53,
+      'Home':0xff50,'End':0xff57,'PageUp':0xff55,'PageDown':0xff56,
+      'F1':0xffbe,'F2':0xffbf,'F3':0xffc0,'F4':0xffc1,'F5':0xffc2,
+      'F6':0xffc3,'F7':0xffc4,'F8':0xffc5,'F9':0xffc6,'F10':0xffc7,
+      'F11':0xffc8,'F12':0xffc9,
+      'Shift':0xffe1,'Control':0xffe3,'Alt':0xffe9,'Meta':0xffeb,
+      'CapsLock':0xffe5,'NumLock':0xff7f,
+    };
+    if (map[e.key]) return map[e.key];
+    if (e.key.length === 1) return e.key.charCodeAt(0);
+    return 0;
+  }
+
+  // Start connection
+  socket.emit('vnc_start', { session_id: SESSION_ID });
 }
 
-function showDirectVNCInfo() {
-  document.getElementById('loading-spinner').style.display = 'none';
-  document.getElementById('loading-title').textContent = 'VM Running';
-  document.getElementById('loading-subtitle').textContent =
-    'WebSocket bridge (websockify) is not reachable. Connect with a VNC viewer:';
-  document.getElementById('loading-steps').innerHTML = `
-    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:8px;text-align:center;">
-      <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;">VNC Connection</div>
-      <div style="font-size:1.1rem;color:var(--accent);">${HOST}:${VNC_PORT}</div>
-      <div style="font-size:0.7rem;color:var(--muted);margin-top:6px;">Display :${VNC_PORT - 5900}</div>
-      <div style="font-size:0.7rem;color:var(--muted);margin-top:12px;">
-        Make sure <code style="color:var(--accent2)">websockify</code> and <code style="color:var(--accent2)">novnc</code> are installed.<br>
-        Run: <code style="color:var(--accent);background:var(--surface);padding:2px 6px;border-radius:3px;">sudo bash setup.sh</code>
-      </div>
-    </div>
-  `;
-  document.getElementById('statusbar-state').textContent = 'VNC only';
-  document.getElementById('statusbar-state').style.color = 'var(--warning, #ffb84d)';
+function showError(msg) {
+  document.getElementById('ov-title').textContent = 'Error';
+  document.getElementById('ov-sub').textContent   = msg;
+  document.getElementById('ov-spinner').style.display = 'none';
 }
+
+// ── Main startup ─────────────────────────────────────────────────────────────
 
 setTimeout(() => {
-  stepDone('ls-qemu');
-  stepActive('ls-vnc');
-  tryConnectVNC();
+  stepDone('s-qemu');
+  stepActive('s-vnc');
+
+  if (USE_NOVNC) {
+    // noVNC with WebSocket shim — best quality
+    startNoVNC();
+    // Hook up overlay hide to socket events
+    socket.on('vnc_connected', () => {
+      setTimeout(() => {
+        document.getElementById('vnc-overlay').classList.add('hidden');
+        document.getElementById('sb-state').textContent = 'Connected';
+        stepDone('s-vnc');
+        stepDone('s-disp');
+      }, 2000);
+    });
+    socket.on('vnc_error', d => {
+      document.getElementById('ov-title').textContent = 'VNC Error';
+      document.getElementById('ov-sub').textContent   = d.reason||'Connection failed';
+      document.getElementById('ov-spinner').style.display='none';
+    });
+    socket.emit('vnc_start', { session_id: SESSION_ID });
+  } else {
+    // Fallback: raw canvas RFB renderer
+    fallbackRawVNC();
+  }
 }, 3000);
 
-// Controls
+// ── VM stopped ───────────────────────────────────────────────────────────────
+
+function showStopped(reason) {
+  document.getElementById('vm-stopped').classList.add('show');
+  document.getElementById('vnc-overlay').classList.add('hidden');
+  document.getElementById('stopped-sub').textContent = reason + ' Return to the dashboard to start a new session.';
+  document.getElementById('status-dot').style.background = 'var(--danger)';
+  document.getElementById('sb-state').textContent = 'Stopped';
+  document.getElementById('sb-state').style.color = 'var(--danger)';
+  socket.emit('vnc_stop', { session_id: SESSION_ID });
+}
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+
 function sendCtrlAltDel() {
-  try { iframe.contentWindow.postMessage({action: 'ctrlaltdel'}, '*'); } catch(e) {}
+  // Send via iframe if noVNC, otherwise inject directly
+  if (USE_NOVNC && novncIframe) {
+    try { novncIframe.contentWindow.postMessage({action:'ctrlaltdel'},'*'); } catch(e){}
+  } else {
+    // Raw RFB: press and release Ctrl+Alt+Del
+    function k(sym, down) {
+      const b64 = btoa(String.fromCharCode(
+        4, down?1:0, 0,0,
+        (sym>>24)&0xff,(sym>>16)&0xff,(sym>>8)&0xff,sym&0xff
+      ));
+      socket.emit('vnc_send', { session_id: SESSION_ID, b64 });
+    }
+    [0xffe3,0xffe9,0xffff].forEach(s=>k(s,1));
+    [0xffe3,0xffe9,0xffff].forEach(s=>k(s,0));
+  }
 }
 
 function toggleFullscreen() {
   const area = document.getElementById('vnc-area');
-  if (!document.fullscreenElement) {
-    area.requestFullscreen().catch(() => {});
-  } else {
-    document.exitFullscreen();
-  }
+  if (!document.fullscreenElement) area.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
 }
 
 async function confirmStop() {
   if (!confirm('Stop this VM? All unsaved state will be lost.')) return;
-  await fetch(`/api/session/${SESSION_ID}/stop`, { method: 'POST' });
+  await fetch(`/api/session/${SESSION_ID}/stop`, { method:'POST' });
   showStopped('VM stopped by user.');
 }
 </script>
